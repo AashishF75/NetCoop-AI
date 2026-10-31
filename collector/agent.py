@@ -166,23 +166,55 @@ class NetworkCollectorAgent:
         port = int(job.get("port") or 80)
         dev_id = job.get("device_id") or f"PROBE-{target_ip}"
 
-        proto = DeviceProtocol.PING_PROBE if proto_str in ("PING", "ICMP", "PING_PROBE") else (
-            DeviceProtocol.HOST_METRICS if proto_str == "HOST_METRICS" else DeviceProtocol.TCP_PROBE
-        )
+        if proto_str in ("PING", "ICMP", "PING_PROBE"):
+            proto = DeviceProtocol.PING_PROBE
+        elif proto_str == "HOST_METRICS":
+            proto = DeviceProtocol.HOST_METRICS
+        elif proto_str == "SNMP":
+            proto = DeviceProtocol.SNMP
+        elif proto_str in ("RESTCONF", "YANG"):
+            proto = DeviceProtocol.RESTCONF
+        else:
+            proto = DeviceProtocol.TCP_PROBE
 
-        tmp_device = LocalDeviceConfig(
-            device_id=dev_id,
-            name=f"On-Demand Probe ({target_ip})",
-            device_type="server" if proto == DeviceProtocol.HOST_METRICS else "router",
-            host=target_ip,
-            port=0 if proto == DeviceProtocol.PING_PROBE else port,
-            protocol=proto,
-            timeout_sec=2.0,
-        )
+        # Check if collector already has a locally configured device for this IP with saved credentials
+        configured_dev = next((d for d in self.settings.devices if d.host == target_ip and d.protocol == proto), None)
+
+        if configured_dev:
+            tmp_device = configured_dev
+        else:
+            tmp_device = LocalDeviceConfig(
+                device_id=dev_id,
+                name=f"On-Demand Probe ({target_ip})",
+                device_type="server" if proto == DeviceProtocol.HOST_METRICS else "router",
+                host=target_ip,
+                port=161 if proto == DeviceProtocol.SNMP else (443 if proto == DeviceProtocol.RESTCONF else (0 if proto == DeviceProtocol.PING_PROBE else port)),
+                protocol=proto,
+                timeout_sec=3.0,
+                snmp_version=job.get("snmp_version") or "v3",
+                snmp_community=job.get("snmp_community"),
+                snmp_user=job.get("snmp_user"),
+                snmp_auth_protocol=job.get("snmp_auth_protocol") or "SHA",
+                snmp_auth_password=job.get("snmp_auth_password"),
+                snmp_priv_protocol=job.get("snmp_priv_protocol") or "AES",
+                snmp_priv_password=job.get("snmp_priv_password"),
+                snmp_security_level=job.get("snmp_security_level") or "authPriv",
+                rest_endpoint=job.get("rest_endpoint") or "/restconf/data/ietf-interfaces:interfaces-state",
+                restconf_auth_type=job.get("restconf_auth_type") or "BASIC",
+                username=job.get("username"),
+                password=job.get("password"),
+                bearer_token=job.get("bearer_token"),
+                tls_verify=job.get("tls_verify", True),
+                ca_cert_path=job.get("ca_cert_path"),
+            )
 
         try:
             if proto == DeviceProtocol.HOST_METRICS:
                 records, avail, unsupp = await poll_host_metrics(tmp_device)
+            elif proto == DeviceProtocol.SNMP:
+                records, avail, unsupp = await poll_snmp_device(tmp_device)
+            elif proto == DeviceProtocol.RESTCONF:
+                records, avail, unsupp = await poll_restconf_device(tmp_device)
             else:
                 records, avail, unsupp = await probe_tcp_reachability(tmp_device)
 

@@ -94,6 +94,33 @@ class MultiAgentOrchestrator:
         timeline_events: List[InvestigationEvent] = []
         step_counter = 0
 
+        # -------------------------------------------------------------
+        # Robust Ingestion & Telemetry Normalization
+        # -------------------------------------------------------------
+        sanitized_telemetry: List[TelemetryRecord] = []
+        ingestion_limitations: List[str] = []
+        raw_list = telemetry if isinstance(telemetry, list) else ([telemetry] if telemetry is not None else [])
+
+        for idx, item in enumerate(raw_list):
+            if isinstance(item, TelemetryRecord):
+                rec = item
+                if not rec.device_id or not str(rec.device_id).strip():
+                    rec = rec.model_copy(update={"device_id": f"Unknown-Device-{idx+1}"})
+                    ingestion_limitations.append(f"Telemetry record #{idx+1} lacked a valid device_id; normalized to '{rec.device_id}'.")
+                sanitized_telemetry.append(rec)
+            elif isinstance(item, dict):
+                try:
+                    d = dict(item)
+                    if not d.get("device_id"):
+                        d["device_id"] = f"Unknown-Device-{idx+1}"
+                        ingestion_limitations.append(f"Raw telemetry record #{idx+1} lacked device_id; defaulted to '{d['device_id']}'.")
+                    rec = TelemetryNormalizer.validate_and_normalize_telemetry(d)
+                    sanitized_telemetry.append(rec)
+                except Exception as e:
+                    ingestion_limitations.append(f"Skipped malformed telemetry record #{idx+1}: {e}")
+            else:
+                ingestion_limitations.append(f"Skipped incompatible telemetry record #{idx+1} of type {type(item).__name__}")
+
         def add_event(
             phase: str,
             event_type: InvestigationEventType,
@@ -137,13 +164,15 @@ class MultiAgentOrchestrator:
             event_type=InvestigationEventType.INCIDENT_DETECTED,
             agent_id="orchestrator",
             title=f"Incident #{inc_id} Ingested",
-            description=f"Ingested {len(telemetry)} telemetry records across enterprise topology. Launching autonomous 5-agent investigation swarm.",
-            evidence_snapshot={"device_count": len(telemetry), "monitored_nodes": [r.device_id for r in telemetry]},
+            description=f"Ingested {len(sanitized_telemetry)} telemetry records across enterprise topology. Launching autonomous 5-agent investigation swarm.",
+            evidence_snapshot={"device_count": len(sanitized_telemetry), "monitored_nodes": [r.device_id for r in sanitized_telemetry]},
         )
 
         # -------------------------------------------------------------
         # STEP 1: Specialized Domain Agents Parallel Analysis
         # -------------------------------------------------------------
+        agent_failures: List[str] = []
+
         add_event(
             phase="DOMAIN_ANALYSIS",
             event_type=InvestigationEventType.AGENT_ACTIVATED,
@@ -151,20 +180,33 @@ class MultiAgentOrchestrator:
             title="Performance Agent Activated",
             description="Monitoring traffic congestion, buffer queue depths, round-trip delay, and packet drop rates.",
         )
-        perf_messages = self.perf_agent.analyze(telemetry)
-        for msg in perf_messages:
-            InteroperabilityValidator.validate_message(msg.model_dump())
-            message_bus.append(msg)
+        perf_messages: List[AgentMessage] = []
+        try:
+            perf_messages = self.perf_agent.analyze(sanitized_telemetry)
+            for msg in perf_messages:
+                InteroperabilityValidator.validate_message(msg.model_dump())
+                message_bus.append(msg)
+                add_event(
+                    phase="DOMAIN_ANALYSIS",
+                    event_type=InvestigationEventType.EVIDENCE_COLLECTED,
+                    agent_id=self.perf_agent.agent_id,
+                    device_id=msg.device_id,
+                    title=f"Performance Metric Anomaly on {msg.device_id}",
+                    description=msg.findings[0] if msg.findings else f"{msg.metric} anomaly",
+                    evidence_snapshot=msg.evidence,
+                    affected_devices=[msg.device_id] if msg.device_id else [],
+                    agent_message=msg,
+                )
+        except Exception as e:
+            agent_failures.append(self.perf_agent.agent_id)
+            self.perf_agent.set_status("ERROR", f"Agent execution failed: {e}")
+            ingestion_limitations.append(f"Performance Agent execution failed or timed out: {e}")
             add_event(
                 phase="DOMAIN_ANALYSIS",
-                event_type=InvestigationEventType.EVIDENCE_COLLECTED,
+                event_type=InvestigationEventType.AGENT_DEACTIVATED,
                 agent_id=self.perf_agent.agent_id,
-                device_id=msg.device_id,
-                title=f"Performance Metric Anomaly on {msg.device_id}",
-                description=msg.findings[0] if msg.findings else f"{msg.metric} anomaly",
-                evidence_snapshot=msg.evidence,
-                affected_devices=[msg.device_id] if msg.device_id else [],
-                agent_message=msg,
+                title="Performance Agent Interrupted",
+                description=f"Execution failed or timed out: {e}. Swarm continuing with peer agents.",
             )
 
         add_event(
@@ -174,20 +216,33 @@ class MultiAgentOrchestrator:
             title="Infrastructure Health Agent Activated",
             description="Inspecting host CPU/memory load, transceiver optical levels, and physical layer CRC counters.",
         )
-        infra_messages = self.infra_agent.analyze(telemetry)
-        for msg in infra_messages:
-            InteroperabilityValidator.validate_message(msg.model_dump())
-            message_bus.append(msg)
+        infra_messages: List[AgentMessage] = []
+        try:
+            infra_messages = self.infra_agent.analyze(sanitized_telemetry)
+            for msg in infra_messages:
+                InteroperabilityValidator.validate_message(msg.model_dump())
+                message_bus.append(msg)
+                add_event(
+                    phase="DOMAIN_ANALYSIS",
+                    event_type=InvestigationEventType.EVIDENCE_COLLECTED,
+                    agent_id=self.infra_agent.agent_id,
+                    device_id=msg.device_id,
+                    title=f"Hardware Resource Anomaly on {msg.device_id}",
+                    description=msg.findings[0] if msg.findings else f"{msg.metric} anomaly",
+                    evidence_snapshot=msg.evidence,
+                    affected_devices=[msg.device_id] if msg.device_id else [],
+                    agent_message=msg,
+                )
+        except Exception as e:
+            agent_failures.append(self.infra_agent.agent_id)
+            self.infra_agent.set_status("ERROR", f"Agent execution failed: {e}")
+            ingestion_limitations.append(f"Infrastructure Agent execution failed or timed out: {e}")
             add_event(
                 phase="DOMAIN_ANALYSIS",
-                event_type=InvestigationEventType.EVIDENCE_COLLECTED,
+                event_type=InvestigationEventType.AGENT_DEACTIVATED,
                 agent_id=self.infra_agent.agent_id,
-                device_id=msg.device_id,
-                title=f"Hardware Resource Anomaly on {msg.device_id}",
-                description=msg.findings[0] if msg.findings else f"{msg.metric} anomaly",
-                evidence_snapshot=msg.evidence,
-                affected_devices=[msg.device_id] if msg.device_id else [],
-                agent_message=msg,
+                title="Infrastructure Agent Interrupted",
+                description=f"Execution failed or timed out: {e}. Swarm continuing with peer agents.",
             )
 
         add_event(
@@ -197,20 +252,33 @@ class MultiAgentOrchestrator:
             title="Connectivity Analysis Agent Activated",
             description="Verifying 802.11 RF coverage, client signal-to-noise ratio, and core DNS/DHCP infrastructure.",
         )
-        conn_messages = self.conn_agent.analyze(telemetry)
-        for msg in conn_messages:
-            InteroperabilityValidator.validate_message(msg.model_dump())
-            message_bus.append(msg)
+        conn_messages: List[AgentMessage] = []
+        try:
+            conn_messages = self.conn_agent.analyze(sanitized_telemetry)
+            for msg in conn_messages:
+                InteroperabilityValidator.validate_message(msg.model_dump())
+                message_bus.append(msg)
+                add_event(
+                    phase="DOMAIN_ANALYSIS",
+                    event_type=InvestigationEventType.EVIDENCE_COLLECTED,
+                    agent_id=self.conn_agent.agent_id,
+                    device_id=msg.device_id,
+                    title=f"Connectivity Anomaly on {msg.device_id}",
+                    description=msg.findings[0] if msg.findings else f"{msg.metric} anomaly",
+                    evidence_snapshot=msg.evidence,
+                    affected_devices=[msg.device_id] if msg.device_id else [],
+                    agent_message=msg,
+                )
+        except Exception as e:
+            agent_failures.append(self.conn_agent.agent_id)
+            self.conn_agent.set_status("ERROR", f"Agent execution failed: {e}")
+            ingestion_limitations.append(f"Connectivity Agent execution failed or timed out: {e}")
             add_event(
                 phase="DOMAIN_ANALYSIS",
-                event_type=InvestigationEventType.EVIDENCE_COLLECTED,
+                event_type=InvestigationEventType.AGENT_DEACTIVATED,
                 agent_id=self.conn_agent.agent_id,
-                device_id=msg.device_id,
-                title=f"Connectivity Anomaly on {msg.device_id}",
-                description=msg.findings[0] if msg.findings else f"{msg.metric} anomaly",
-                evidence_snapshot=msg.evidence,
-                affected_devices=[msg.device_id] if msg.device_id else [],
-                agent_message=msg,
+                title="Connectivity Agent Interrupted",
+                description=f"Execution failed or timed out: {e}. Swarm continuing with peer agents.",
             )
 
         all_domain_messages = perf_messages + infra_messages + conn_messages
@@ -226,22 +294,36 @@ class MultiAgentOrchestrator:
             description=f"Synthesizing {len(all_domain_messages)} domain anomalies. Issuing targeted evidence queries to peer agents.",
         )
 
-        (
-            status,
-            root_cause,
-            confidence,
-            affected_devices,
-            hypotheses,
-            evidence_store,
-            limitations,
-            dialogue_messages,
-        ) = self.corr_agent.cross_examine_and_correlate(
-            domain_messages=all_domain_messages,
-            telemetry=telemetry,
-            performance_agent=self.perf_agent,
-            infrastructure_agent=self.infra_agent,
-            connectivity_agent=self.conn_agent,
-        )
+        try:
+            (
+                status,
+                root_cause,
+                confidence,
+                affected_devices,
+                hypotheses,
+                evidence_store,
+                limitations,
+                dialogue_messages,
+            ) = self.corr_agent.cross_examine_and_correlate(
+                domain_messages=all_domain_messages,
+                telemetry=sanitized_telemetry,
+                performance_agent=self.perf_agent,
+                infrastructure_agent=self.infra_agent,
+                connectivity_agent=self.conn_agent,
+                failed_agents=agent_failures,
+            )
+        except Exception as e:
+            agent_failures.append(self.corr_agent.agent_id)
+            self.corr_agent.set_status("ERROR", f"Correlation failure: {e}")
+            ingestion_limitations.append(f"Fault Correlation Agent failure: {e}")
+            status = DiagnosticStatus.INCONCLUSIVE
+            root_cause = f"Inconclusive Diagnosis (Correlation Pipeline Interrupted: {e})"
+            confidence = 0.15
+            affected_devices = [r.device_id for r in sanitized_telemetry if r.device_id] or ["Unknown-Device"]
+            hypotheses = []
+            evidence_store = []
+            limitations = [f"Correlation failure: {e}"]
+            dialogue_messages = []
 
         # Process dialogue messages into timeline events
         for msg in dialogue_messages:
@@ -336,7 +418,8 @@ class MultiAgentOrchestrator:
             f"{self.corr_agent.name} ({self.corr_agent.agent_id})",
         ]
 
-        missing_telemetry = [lim for lim in limitations if "missing" in lim.lower()]
+        combined_limitations = list(dict.fromkeys(limitations + ingestion_limitations))
+        missing_telemetry = [lim for lim in combined_limitations if "missing" in lim.lower()]
 
         # Assemble structured Investigation Explanation ("Why did the agents reach this conclusion?")
         initial_symptoms = []
@@ -346,7 +429,19 @@ class MultiAgentOrchestrator:
                     if "nominal" not in finding.lower() and "ready" not in finding.lower() and "standing by" not in finding.lower():
                         initial_symptoms.append(f"[{agent.agent_id}] {finding}")
 
-        initial_hypotheses_list = [h.name for h in hypotheses] if hypotheses else ["Routine Operational Assessment"]
+        # Ensure initial hypotheses list clearly identifies any initial hypothesis that was challenged
+        initial_hypotheses_list = []
+        conflicts_resolved_list = getattr(self.corr_agent, "conflicts_resolved", [])
+        if conflicts_resolved_list:
+            for c in conflicts_resolved_list:
+                init_h = c.get("initial_hypothesis")
+                if init_h and init_h not in initial_hypotheses_list:
+                    initial_hypotheses_list.append(init_h)
+        for h in hypotheses:
+            if h.name not in initial_hypotheses_list:
+                initial_hypotheses_list.append(h.name)
+        if not initial_hypotheses_list:
+            initial_hypotheses_list = ["Routine Operational Assessment"]
 
         inter_agent_queries = []
         for m in message_bus:
@@ -369,11 +464,27 @@ class MultiAgentOrchestrator:
                 for c in h.contradicting_evidence:
                     refuting_evidence_strings.append(f"[{h.name}] Refuted by: {c}")
 
-        final_res_text = (
-            f"The multi-agent swarm established consensus on '{root_cause}' with {round(confidence*100, 1)}% confidence. "
-            f"Domain agents corroborated signals across performance and infrastructure layers, while correlation cross-examination "
-            f"disproved conflicting hypotheses through empirical counter-evidence."
-        )
+        # Determine conflict resolution status and details
+        conflict_status = "NO_CONFLICT"
+        resolved_details = None
+        if conflicts_resolved_list:
+            conflict_status = "RESOLVED"
+            resolved_details = conflicts_resolved_list[0]
+        elif any(m.message_type == MessageType.CONFLICT_DETECTED for m in dialogue_messages):
+            conflict_status = "RESOLVED"
+
+        if conflict_status == "RESOLVED" and resolved_details:
+            final_res_text = (
+                f"The multi-agent swarm established consensus on '{root_cause}' with {round(confidence*100, 1)}% calibrated confidence. "
+                f"Initial hypothesis '{resolved_details.get('initial_hypothesis')}' was challenged and refuted because {resolved_details.get('refuting_evidence')} "
+                f"Swarm resolution: {resolved_details.get('resolution_reasoning')} Telemetry contradiction is explicitly marked RESOLVED."
+            )
+        else:
+            final_res_text = (
+                f"The multi-agent swarm established consensus on '{root_cause}' with {round(confidence*100, 1)}% calibrated confidence. "
+                f"Domain agents corroborated signals across performance and infrastructure layers, while correlation cross-examination "
+                f"disproved conflicting hypotheses through empirical counter-evidence."
+            )
 
         tradeoffs_list = [
             "Recommended remediation provides immediate operational relief with verified rollback safeguards.",
@@ -390,8 +501,10 @@ class MultiAgentOrchestrator:
             tradeoffs_and_risks=tradeoffs_list,
             assumptions_and_limitations=[
                 "Evaluated in benchmark digital twin simulation environment using canonical Pydantic v2 JSON protocol.",
-                "Cross-agent cross-examination bounded to max 2 interrogation rounds with heuristic Bayesian scoring.",
-            ] + list(limitations),
+                "Cross-agent cross-examination bounded to max 2 interrogation rounds with heuristic evidence scoring.",
+            ] + list(combined_limitations),
+            conflict_status=conflict_status,
+            resolved_conflict_details=resolved_details,
         )
 
         # Determine Investigation Intelligence Trace (Stopping condition, agent sequence, termination reason)
@@ -415,7 +528,7 @@ class MultiAgentOrchestrator:
             term_expl = "Investigation successfully concluded: Conflicting hypothesis refuted by empirical counter-evidence; unanimous consensus achieved across all 5 agents."
         else:
             term_reason = InvestigationTerminationReason.SUFFICIENT_PROOF
-            term_expl = "Investigation concluded within bounded limit: Sufficient corroborating evidence collected from domain agents to satisfy Bayesian diagnostic threshold."
+            term_expl = "Investigation concluded within bounded limit: Sufficient corroborating evidence collected from domain agents to satisfy diagnostic evidence threshold."
 
         investigation_trace = AgentInvestigationTrace(
             investigation_id=inc_id,
@@ -427,14 +540,14 @@ class MultiAgentOrchestrator:
             termination_reason=term_reason,
             termination_explanation=term_expl,
             query_priority_ranking=priority_ranking,
-            uncertainty_factors=limitations,
+            uncertainty_factors=combined_limitations,
         )
 
         # Proactive Risk Analysis on current telemetry
-        proactive_warnings = proactive_predictor.analyze_trends([], current_telemetry=telemetry)
+        proactive_warnings = proactive_predictor.analyze_trends([], current_telemetry=sanitized_telemetry)
 
         # Determine overall telemetry origin (LIVE_DEVICE, LIVE_HOST, GENERATED_TEST, CUSTOM_IMPORT, or SIMULATED_SCENARIO)
-        origins = {getattr(rec, "telemetry_origin", "SIMULATED_SCENARIO") for rec in telemetry}
+        origins = {getattr(rec, "telemetry_origin", "SIMULATED_SCENARIO") for rec in sanitized_telemetry}
         if "LIVE_DEVICE" in origins:
             detected_origin = "LIVE_DEVICE"
         elif "LIVE_HOST" in origins or "LIVE" in origins:
@@ -446,6 +559,12 @@ class MultiAgentOrchestrator:
         else:
             detected_origin = "SIMULATED_SCENARIO"
 
+        # Ensure strict consistency: Inconclusive / Insufficient Evidence must NEVER have high confidence
+        if status in (DiagnosticStatus.INCONCLUSIVE, DiagnosticStatus.INSUFFICIENT_EVIDENCE) or str(status).upper() in ("INCONCLUSIVE", "INSUFFICIENT_EVIDENCE"):
+            confidence = min(confidence, 0.48)
+
+        calc_method = getattr(self.corr_agent, "confidence_explanation", "") or "Evidence-Based Multi-Factor Calibrated Confidence (Signal Corroboration, Completeness, Freshness & Contradiction Penalties)"
+
         canonical_report = self.recom_agent.compile_canonical_report(
             incident_id=inc_id,
             status=status,
@@ -455,21 +574,25 @@ class MultiAgentOrchestrator:
             supporting_evidence=evidence_store,
             alternative_causes=hypotheses,
             evidence_sources=evidence_sources,
-            limitations=limitations,
+            limitations=combined_limitations,
             execution_time_ms=elapsed_ms,
             inter_agent_messages_count=len(message_bus),
             fault_propagation_paths=fault_propagation_paths,
             missing_telemetry=missing_telemetry,
-            confidence_calculation_method="Weighted Multi-Agent Anomaly Scoring & Bayesian Evidence Synthesis",
+            confidence_calculation_method=calc_method,
             investigation_explanation=explanation,
             investigation_trace=investigation_trace,
             proactive_warnings=proactive_warnings,
             telemetry_origin=detected_origin,
+            next_diagnostic_checks=getattr(self.corr_agent, "next_diagnostic_checks", []),
+            observed_facts=getattr(self.corr_agent, "observed_facts", []),
+            conflict_status=conflict_status,
+            resolved_conflict_details=resolved_details,
         )
 
         # Update Digital Twin snapshot
         digital_twin_engine.build_snapshot(
-            telemetry=telemetry,
+            telemetry=sanitized_telemetry,
             implicated_devices=affected_devices,
             fault_propagation_paths=fault_propagation_paths,
             root_cause=root_cause,
@@ -522,7 +645,7 @@ class MultiAgentOrchestrator:
             "affected_devices": affected_devices,
             "fault_propagation_paths": fault_propagation_paths,
             "execution_time_ms": round(elapsed_ms, 2),
-            "telemetry": [r.model_dump() for r in telemetry],
+            "telemetry": [r.model_dump() for r in sanitized_telemetry],
             "canonical_report": canonical_report.model_dump(),
             "investigation_trace": investigation_trace.model_dump(),
             "proactive_warnings": [w.model_dump() for w in proactive_warnings],

@@ -376,18 +376,17 @@ class TestOnDemandIpProbeWorkflow:
         assert 0.0 <= probe["memory_utilization_pct"] <= 100.0
 
     @pytest.mark.asyncio
-    async def test_snmp_credential_boundary(self):
-        """Verifies SNMP/RESTCONF are correctly declared planned capabilities requiring credentials."""
+    async def test_unsupported_protocol_boundary(self):
+        """Verifies unsupported probe protocols are strictly validated and rejected."""
         orch = MultiAgentOrchestrator()
         with pytest.raises(ValueError) as excinfo:
             await probe_ip_and_diagnose(
                 ip="10.244.241.91",
-                protocol="SNMP",
+                protocol="BGP_MONITOR",
                 orchestrator=orch,
             )
         err_msg = str(excinfo.value).lower()
-        assert "planned capability" in err_msg
-        assert "credentials" in err_msg
+        assert "unsupported probe protocol" in err_msg
 
     @pytest.mark.asyncio
     async def test_probe_routed_via_online_collector(self):
@@ -439,6 +438,7 @@ class TestOnDemandIpProbeWorkflow:
                 ip="10.10.214.1",
                 protocol="PING",
                 orchestrator=orch,
+                collector_id=col_id,
             )
             assert res["success"] is True
             assert "Test-Edge-Collector" in res["routed_via_collector"]

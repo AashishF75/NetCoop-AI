@@ -613,7 +613,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
                       <span className="text-slate-200 font-semibold">Evidential Consensus</span>
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      Swarm terminated dialogue deterministically within 2 interrogation rounds upon achieving unanimous Bayesian evidence convergence.
+                      Swarm terminated dialogue deterministically within 2 interrogation rounds upon achieving unanimous evidential consensus.
                     </p>
                   </div>
 

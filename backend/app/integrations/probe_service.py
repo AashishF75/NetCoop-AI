@@ -136,6 +136,7 @@ async def probe_ip_and_diagnose(
     port: int = 80,
     device_id: Optional[str] = None,
     orchestrator: Optional[MultiAgentOrchestrator] = None,
+    collector_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Executes on-demand IP check, enforces protocol boundaries, constructs genuine TelemetryRecord,
@@ -148,11 +149,10 @@ async def probe_ip_and_diagnose(
     orch = orchestrator or MultiAgentOrchestrator()
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    # Reject unsupported/unauthenticated protocols transparently
-    if proto_norm in ("SNMP", "RESTCONF", "YANG"):
+    valid_protocols = {"PING", "ICMP", "PING_PROBE", "TCP", "TCP_PROBE", "PORT_CONNECT", "HOST_METRICS", "LOCAL_HOST", "HOST", "SNMP", "RESTCONF", "YANG"}
+    if proto_norm not in valid_protocols:
         raise ValueError(
-            f"{proto_norm} is a planned capability requiring authorized credentials configured on physical hardware. "
-            "Only ICMP Ping, TCP Port Connect, and Host OS Kernel probes are currently executable via the active collector."
+            f"Unsupported probe protocol '{protocol}'. Choose from: PING, TCP_PROBE, HOST_METRICS, SNMP, RESTCONF."
         )
 
     supported_metrics: List[str] = []
@@ -177,7 +177,10 @@ async def probe_ip_and_diagnose(
 
     # Priority 1: Route probe through the paired on-premise local collector agent inside LAN
     if online_collectors:
-        assigned_col = online_collectors[0]
+        if collector_id:
+            assigned_col = next((c for c in online_collectors if c.collector_id == collector_id), online_collectors[0])
+        else:
+            assigned_col = online_collectors[0]
         routed_collector_id = assigned_col.collector_id
         routed_collector_name = f"{assigned_col.name} ({assigned_col.collector_id})"
 
@@ -298,19 +301,54 @@ async def probe_ip_and_diagnose(
                 memory_utilization_pct=mem_val,
                 latency_ms=round(lat_ms, 2) if lat_ms is not None else 0.5,
                 packet_loss_pct=loss_pct,
-                queue_drops_per_sec=0.0,
                 interface_crc_errors=err_delta,
+                queue_drops_per_sec=0.0,
                 telemetry_origin="LIVE_HOST",
                 custom_metrics={
-                    "probe_protocol": "HOST_OS_KERNEL",
+                    "probe_protocol": "HOST_KERNEL",
                     "target_host": clean_ip,
                     "supported_metrics": supported_metrics,
                     "unsupported_metrics": unsupported_metrics,
                     "probe_note": probe_note,
                 },
             )
+
+        elif proto_norm == "SNMP":
+            from collector.adapters.snmp_poller import poll_snmp_device
+            from collector.config import LocalDeviceConfig, DeviceProtocol
+            dev_cfg = LocalDeviceConfig(
+                device_id=dev_id,
+                name=f"SNMP Target ({clean_ip})",
+                host=clean_ip,
+                port=port or 161,
+                protocol=DeviceProtocol.SNMP,
+                timeout_sec=2.5,
+            )
+            recs, avail, unsupp = await poll_snmp_device(dev_cfg)
+            if recs:
+                record = recs[0]
+                supported_metrics = avail
+                unsupported_metrics = unsupp
+                probe_note = record.custom_metrics.get("probe_note") or f"Authenticated SNMP query executed against {clean_ip}:{port or 161}."
+        elif proto_norm in ("RESTCONF", "YANG"):
+            from collector.adapters.restconf_poller import poll_restconf_device
+            from collector.config import LocalDeviceConfig, DeviceProtocol
+            dev_cfg = LocalDeviceConfig(
+                device_id=dev_id,
+                name=f"RESTCONF Target ({clean_ip})",
+                host=clean_ip,
+                port=port or 443,
+                protocol=DeviceProtocol.RESTCONF,
+                timeout_sec=3.0,
+            )
+            recs, avail, unsupp = await poll_restconf_device(dev_cfg)
+            if recs:
+                record = recs[0]
+                supported_metrics = avail
+                unsupported_metrics = unsupp
+                probe_note = record.custom_metrics.get("probe_note") or f"Authenticated RESTCONF query executed against {clean_ip}:{port or 443}."
         else:
-            raise ValueError(f"Unsupported probe protocol '{protocol}'. Choose from: PING, TCP_PROBE, HOST_METRICS.")
+            raise ValueError(f"Unsupported probe protocol '{protocol}'. Choose from: PING, TCP_PROBE, HOST_METRICS, SNMP, RESTCONF.")
 
     # Execute Multi-Agent Swarm Diagnosis Pipeline
     incident_id = f"INC-LIVE-IP-{int(time.time())}"

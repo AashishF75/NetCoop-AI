@@ -30,6 +30,7 @@ class DiagnosticStatus(str, Enum):
     CONFIRMED = "CONFIRMED"
     SUSPECTED = "SUSPECTED"
     INCONCLUSIVE = "INCONCLUSIVE"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
     DEGRADED = "DEGRADED"
 
 
@@ -99,6 +100,16 @@ class TelemetryRecord(BaseModel):
     power_supply_status: Optional[str] = "OK"
     interface_crc_errors: Optional[int] = 0
     interface_flaps: Optional[int] = 0
+    interface_id: Optional[str] = None
+    interface_oper_status: Optional[str] = None
+    interface_admin_status: Optional[str] = None
+    interface_in_octets: Optional[int] = None
+    interface_out_octets: Optional[int] = None
+    interface_in_discards: Optional[int] = None
+    interface_out_discards: Optional[int] = None
+    sys_name: Optional[str] = None
+    sys_descr: Optional[str] = None
+    sys_uptime_sec: Optional[float] = None
     
     # Connectivity metrics
     link_id: Optional[str] = None
@@ -132,6 +143,7 @@ class EvidenceItem(BaseModel):
     severity: str = "INFO" # INFO, WARNING, CRITICAL
     timestamp: str
     summary: str
+    telemetry_origin: Optional[str] = "SIMULATED_SCENARIO"
 
 
 class HypothesisStatus(str, Enum):
@@ -163,6 +175,8 @@ class RemediationAction(BaseModel):
     rationale: str
     rollback_plan: Optional[str] = None
     expected_outcome: Optional[str] = None
+    supporting_evidence: List[str] = Field(default_factory=list)
+    requires_human_approval: bool = False
 
 
 class InvestigationExplanation(BaseModel):
@@ -177,6 +191,8 @@ class InvestigationExplanation(BaseModel):
     final_resolution: str = ""
     tradeoffs_and_risks: List[str] = Field(default_factory=list)
     assumptions_and_limitations: List[str] = Field(default_factory=list)
+    conflict_status: Optional[str] = Field(default="NO_CONFLICT", description="NO_CONFLICT, RESOLVED, or UNRESOLVED")
+    resolved_conflict_details: Optional[Dict[str, Any]] = Field(default=None, description="Details of initial hypothesis, refuting evidence, and resolution logic")
 
 
 class InvestigationTerminationReason(str, Enum):
@@ -254,11 +270,25 @@ class CanonicalDiagnosticReport(BaseModel):
     proactive_warnings: List[ProactiveRiskWarning] = Field(default_factory=list)
     evidence_sources: List[str]
     limitations: List[str]
+    next_diagnostic_checks: List[str] = Field(default_factory=list)
+    observed_facts: List[str] = Field(default_factory=list)
     execution_time_ms: float
     inter_agent_messages_count: int
     telemetry_origin: str = Field(
         default="SIMULATED_SCENARIO",
         description="SIMULATED_SCENARIO, CUSTOM_IMPORT, LIVE_HOST, LIVE_DEVICE, GENERATED_TEST",
+    )
+    protocol_rejection_confidence: Optional[float] = Field(
+        default=None,
+        description="Confidence that an incompatible protocol message was correctly rejected (1.0 = 100%)",
+    )
+    conflict_status: Optional[str] = Field(
+        default="NO_CONFLICT",
+        description="NO_CONFLICT, RESOLVED, or UNRESOLVED",
+    )
+    resolved_conflict_details: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Details of initial hypothesis, refuting evidence, and resolution logic",
     )
 
 
@@ -403,6 +433,7 @@ class IncidentPriorityItem(BaseModel):
 class InvestigationEventType(str, Enum):
     INCIDENT_DETECTED = "INCIDENT_DETECTED"
     AGENT_ACTIVATED = "AGENT_ACTIVATED"
+    AGENT_DEACTIVATED = "AGENT_DEACTIVATED"
     TELEMETRY_INGESTED = "TELEMETRY_INGESTED"
     INITIAL_HYPOTHESIS_PROPOSED = "INITIAL_HYPOTHESIS_PROPOSED"
     EVIDENCE_COLLECTED = "EVIDENCE_COLLECTED"

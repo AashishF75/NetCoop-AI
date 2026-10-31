@@ -268,8 +268,19 @@ def run_fault_diagnosis(req: DiagnoseRequest):
         result["message_bus"].insert(0, proto_alert.model_dump())
         result["status"] = "INCONCLUSIVE"
         result["suspected_root_cause"] = "Protocol Interoperability Rejection (Schema Version Mismatch & Malformed Fields)"
+        # Distinguish network fault confidence from protocol rejection confidence (Preserve Phase 4 invariant)
+        network_diag_conf = 0.20
+        protocol_rej_conf = 1.0
+        result["confidence"] = network_diag_conf
+        result["protocol_rejection_confidence"] = protocol_rej_conf
         result["canonical_report"]["status"] = "INCONCLUSIVE"
         result["canonical_report"]["suspected_root_cause"] = "Protocol Interoperability Rejection (Schema Version Mismatch & Malformed Fields)"
+        result["canonical_report"]["confidence"] = network_diag_conf
+        result["canonical_report"]["protocol_rejection_confidence"] = protocol_rej_conf
+        result["canonical_report"]["confidence_calculation_method"] = (
+            "Protocol Enforcement: 100.0% rejection certainty (Schema Version Mismatch). "
+            "Network Root-Cause Diagnosis: INCONCLUSIVE (20.0% confidence) because non-compliant telemetry was discarded."
+        )
         result["canonical_report"]["limitations"].append(
             "Agent message from 'legacy-vendor-probe-09' rejected due to schema version 0.8.2 incompatibility."
         )

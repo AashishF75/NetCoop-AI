@@ -170,17 +170,47 @@ end
 write memory
 ```
 
-2. **Enable RESTCONF (YANG Data Model Interface)**:
+2. **Enable RESTCONF (RFC 8040 YANG Operational Interface)**:
 ```cisco
 configure terminal
-! Enable HTTP secure server and RESTCONF endpoint
+! Enable HTTP secure server with TLS
 ip http secure-server
 ip http authentication local
+! Activate RFC 8040 RESTCONF subsystem
 restconf
+! Create dedicated read-only operator or administrative account
 username netcoop privilege 15 secret StrongPassword123!
 end
 write memory
 ```
+
+#### RESTCONF Telemetry Configuration in Local Collector:
+The local collector agent polls interface operational state and statistics over HTTPS. Configure the device in `collector/config.py`:
+```python
+LocalDeviceConfig(
+    device_id="ROUTER-CORE-RESTCONF",
+    name="Campus Core Router (Cisco Catalyst)",
+    host="192.168.1.1",
+    port=443,
+    protocol=DeviceProtocol.RESTCONF,
+    # Authentication (strictly stored locally on collector machine)
+    username="netcoop",
+    password="<your-local-router-password>",
+    restconf_auth_type="BASIC",  # or "BEARER" with bearer_token="<your-jwt-or-token>"
+    # Configurable YANG Endpoints
+    rest_endpoint="/restconf/data/ietf-interfaces:interfaces-state",
+    rest_cpu_endpoint="/restconf/data/Cisco-IOS-XE-process-cpu-oper:cpu-usage",
+    rest_memory_endpoint="/restconf/data/Cisco-IOS-XE-memory-oper:memory-statistics",
+    # TLS Security Policy
+    tls_verify=True,              # Enabled by default for secure HTTPS
+    ca_cert_path=None,            # Path to enterprise CA bundle (e.g. "/etc/ssl/certs/router-ca.pem")
+)
+```
+
+> **Security & Zero-Exposure Guarantee**:
+> - Device credentials (`username`, `password`, `bearer_token`) **never** leave the collector machine and are never transmitted to Render.
+> - TLS certificate verification is enforced by default (`tls_verify=True`). If a self-signed lab certificate is used, supply `ca_cert_path` pointing to your internal root certificate or explicitly toggle `tls_verify=False`, which triggers a security warning in the collector telemetry audit log.
+> - Operational metrics (CPU, RAM) are queried only if the device exposes supported YANG operational models. If unsupported or unconfigured, metrics are marked `None` and listed in `unsupported_metrics` — never fabricated.
 
 3. **Enable Syslog Forwarding to Collector**:
 ```cisco

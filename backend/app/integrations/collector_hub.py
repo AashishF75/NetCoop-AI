@@ -262,8 +262,9 @@ class CollectorHub:
         return {"status": "ACK", "server_time": datetime.now(timezone.utc).isoformat()}
 
     def list_online_collectors(self) -> List[CollectorModel]:
-        """Returns all enrolled collectors that are currently ONLINE."""
-        return [c for c in self.list_collectors() if c.status == CollectorStatus.ONLINE]
+        """Returns all enrolled collectors that are currently ONLINE, sorted by most recent activity."""
+        online = [c for c in self.list_collectors() if c.status == CollectorStatus.ONLINE]
+        return sorted(online, key=lambda c: c.last_heartbeat_at or "", reverse=True)
 
     def get_active_default_gateway(self) -> str:
         """

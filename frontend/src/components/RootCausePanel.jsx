@@ -39,6 +39,10 @@ export default function RootCausePanel({ report }) {
     investigation_explanation,
   } = report;
 
+  const protocol_rejection_confidence = report.protocol_rejection_confidence;
+  const conflict_status = report.conflict_status || investigation_explanation?.conflict_status;
+  const resolved_conflict_details = report.resolved_conflict_details || investigation_explanation?.resolved_conflict_details;
+
   const confPercent = Math.round((confidence || 0) * 100);
 
   const getStatusBadge = () => {
@@ -169,6 +173,61 @@ export default function RootCausePanel({ report }) {
           </div>
         </div>
       </div>
+
+      {/* Protocol Rejection vs Network Diagnosis Confidence Badge (Fix 2) */}
+      {protocol_rejection_confidence && (
+        <div className="rounded-lg bg-purple-950/25 border border-purple-500/30 p-3.5 space-y-1.5 text-xs font-mono">
+          <div className="flex items-center justify-between">
+            <span className="text-purple-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+              <HelpCircle className="w-4 h-4 text-purple-400" />
+              Protocol Interoperability Rejection
+            </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+              {Math.round(protocol_rejection_confidence * 100)}% Rejection Certainty
+            </span>
+          </div>
+          <p className="text-slate-300 text-[11px] leading-relaxed">
+            The canonical validator successfully detected and rejected an incompatible legacy schema version with 100% certainty.
+            The network fault root cause is marked <strong className="text-amber-300">INCONCLUSIVE</strong> ({confPercent}% diagnostic confidence) because non-compliant telemetry cannot support a confirmed network fault diagnosis.
+          </p>
+        </div>
+      )}
+
+      {/* Telemetry Conflict Explicitly Resolved Card (Fix 3) */}
+      {conflict_status === 'RESOLVED' && resolved_conflict_details && (
+        <div className="rounded-lg bg-emerald-950/20 border border-emerald-500/30 p-4 space-y-2.5">
+          <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2">
+            <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>Multi-Agent Telemetry Conflict Resolution</span>
+            </div>
+            <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              CONFLICT RESOLVED (0.00 PENALTY)
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-mono">
+            <div className="p-2.5 rounded bg-slate-950 border border-slate-800">
+              <span className="text-amber-400 font-semibold block text-[10px] uppercase mb-0.5">Initial Hypothesis:</span>
+              <span className="text-slate-200">{resolved_conflict_details.initial_hypothesis}</span>
+            </div>
+            <div className="p-2.5 rounded bg-slate-950 border border-slate-800">
+              <span className="text-emerald-400 font-semibold block text-[10px] uppercase mb-0.5">Final Selected Diagnosis:</span>
+              <span className="text-slate-200">{resolved_conflict_details.selected_diagnosis}</span>
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300">
+            <strong className="text-rose-400 font-semibold mr-1">Specific Refuting Evidence:</strong>
+            {resolved_conflict_details.refuting_evidence}
+          </div>
+
+          <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300">
+            <strong className="text-cyan-400 font-semibold mr-1">Why Selected:</strong>
+            {resolved_conflict_details.resolution_reasoning}
+          </div>
+        </div>
+      )}
 
       {/* Competing Root-Cause Hypotheses */}
       {alternative_causes.length > 0 && (

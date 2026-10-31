@@ -114,12 +114,27 @@ class LocalDeviceConfig(BaseModel):
     timeout_sec: float = Field(default=2.5, ge=0.5, le=30.0)
 
     # Local credentials
-    snmp_community: Optional[str] = "public"
-    snmp_version: str = "v2c"
+    snmp_version: str = "v3"  # "v3" (secure default) or "v2c" (legacy explicit)
+    snmp_community: Optional[str] = None  # Used only if snmp_version == "v2c"
+    snmp_user: Optional[str] = None
+    snmp_auth_protocol: Optional[str] = "SHA"  # "SHA", "SHA256", "MD5", "NONE"
+    snmp_auth_password: Optional[str] = None
+    snmp_priv_protocol: Optional[str] = "AES"  # "AES", "DES", "NONE"
+    snmp_priv_password: Optional[str] = None
+    snmp_security_level: Optional[str] = "authPriv"  # "authPriv", "authNoPriv", "noAuthNoPriv"
+    snmp_context_name: Optional[str] = ""
+    snmp_interface_index: int = 1
+    # RESTCONF configuration
     rest_endpoint: Optional[str] = "/restconf/data/ietf-interfaces:interfaces-state"
+    rest_cpu_endpoint: Optional[str] = "/restconf/data/Cisco-IOS-XE-process-cpu-oper:cpu-usage"
+    rest_memory_endpoint: Optional[str] = "/restconf/data/Cisco-IOS-XE-memory-oper:memory-statistics"
+    restconf_auth_type: str = "BASIC"  # "BASIC", "BEARER", "API_KEY"
     username: Optional[str] = None
     password: Optional[str] = None
+    bearer_token: Optional[str] = None
     api_key: Optional[str] = None
+    tls_verify: bool = True  # Secure HTTPS verification enabled by default
+    ca_cert_path: Optional[str] = None
     enabled: bool = True
 
     @field_validator("host")

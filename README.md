@@ -45,7 +45,7 @@ Rather than relying on isolated static threshold alerts or opaque black-box mode
                  │   - Issues Directed QUERY_EVIDENCE to Peers         │
                  │   - Evaluates Competing Hypotheses                  │
                  │   - Executes Real-Time Conflict Resolution          │
-                 │   - Calculates Synthesized Bayesian Confidence      │
+                 │   - Calculates Evidence-Based Calibrated Confidence │
                  └──────────────────────────┬──────────────────────────┘
                                             │ Emits DIAGNOSTIC_SUMMARY
                                             ▼
@@ -75,7 +75,7 @@ Rather than relying on isolated static threshold alerts or opaque black-box mode
 | **Performance Agent** | `perf-agent-01` | Traffic dynamics & congestion | Latency (`ms`), Jitter (`ms`), Packet Loss (`%`), Bandwidth Utilization (`%`), Egress Queue Drops (`pkts/s`) |
 | **Infrastructure Health Agent** | `infra-agent-01` | Hardware & node resources | CPU (`%`), Memory (`%`), Interface CRC Errors (`errors/s`), Physical Link Flaps, Device Status |
 | **Connectivity Analysis Agent** | `conn-agent-01` | Physical reachability & core services | Wireless RF RSSI (`dBm`), SNR (`dB`), 802.11 Retries (`%`), DNS Response (`ms`), DHCP Pool (`%`) |
-| **Fault Correlation Agent** | `corr-agent-01` | Cross-agent synthesis & hypothesis ranking | Interrogates domain agents via `QUERY_EVIDENCE`, detects conflicting signals, computes Bayesian probability |
+| **Fault Correlation Agent** | `corr-agent-01` | Cross-agent synthesis & hypothesis ranking | Interrogates domain agents via `QUERY_EVIDENCE`, detects conflicting signals, computes evidence-based calibrated confidence |
 | **Recommendation & Reporting Agent** | `recom-agent-01` | Operational runbooks & canonical reporting | Generates ordered CLI commands (Cisco/Arista/Linux), risk levels, rollback plans, and final canonical report |
 
 ### Genuine Inter-Agent Communication
@@ -133,7 +133,7 @@ All inter-agent communication and diagnostic reports strictly adhere to Pydantic
 
 ---
 
-## 5. Getting Started & Installation
+## 5. Getting Started & Installation (Windows & Cross-Platform)
 
 ### Prerequisites
 - Python 3.10+ (Tested on Python 3.13.2)
@@ -141,37 +141,55 @@ All inter-agent communication and diagnostic reports strictly adhere to Pydantic
 - npm 9+
 
 ### Quick Start (Automated Windows Launcher)
-Simply double-click `start.bat` or run:
+Simply double-click `start.bat` or run in PowerShell:
 ```powershell
 .\start.bat
 ```
+The automated script verifies backend tests, starts the FastAPI daemon on port 8000, and launches the React Vite frontend on port 5173.
 
-### Manual Step-by-Step Setup
+### Manual Step-by-Step Setup (Windows PowerShell)
 
-#### 1. Backend Setup
-```bash
-# Navigate to backend and install requirements
-cd backend
-pip install -r requirements.txt
+#### Terminal 1 — Backend (FastAPI Diagnosis Swarm)
+```powershell
+# Set Python path to include root and backend
+$env:PYTHONPATH=".;backend"
 
-# Run automated test suite
-python -m pytest tests -v
+# Install backend dependencies (first time only)
+pip install -r backend/requirements.txt
 
 # Launch FastAPI backend server
-python -m uvicorn app.main:app --app-dir . --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
+- Health Check: `http://127.0.0.1:8000/api/health`
+- OpenAPI Swagger Documentation: `http://127.0.0.1:8000/docs`
 
-#### 2. Frontend Setup
-```bash
-# Navigate to frontend and install dependencies
+#### Terminal 2 — Frontend (React 18 + Vite)
+```powershell
+# Navigate to frontend and install packages (first time only)
 cd frontend
 npm install
 
 # Start Vite development server
 npm run dev
 ```
-
 Open your browser at **`http://localhost:5173`**.
+
+#### Terminal 3 — On-Premise Local Collector (Optional: For Live Dynamic Gateway Probes)
+```powershell
+# In a fresh PowerShell window from repository root:
+$env:PYTHONPATH=".;backend"
+python scripts/start_live_collector.py
+```
+Automatically detects your host's active default gateway, registers with the backend over outbound HTTP, and streams genuine ICMP ping and TCP socket telemetry without inbound firewall holes.
+
+#### Full End-to-End Verification Test
+```powershell
+# Run the 156-test comprehensive test suite:
+$env:PYTHONPATH=".;backend"; pytest backend/tests -q
+
+# Run the Phase 5 End-to-End Validation script covering all 6 official scenarios & live collector:
+$env:PYTHONPATH=".;backend"; python scripts/verify_phase5_demo.py
+```
 
 ---
 
@@ -355,5 +373,3 @@ TeamFusionNetCoopAI/
 ├── README.md                           # Comprehensive documentation & evaluation guide
 └── start.bat                           # Windows one-click startup launcher
 ```
-#   N e t C o o p - A I  
- 

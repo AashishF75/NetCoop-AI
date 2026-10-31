@@ -91,7 +91,7 @@ NetCoop AI is built to demonstrate five indispensable pillars of autonomous netw
      `INGESTION` ➔ `DOMAIN_ANALYSIS` ➔ `CROSS_EXAMINATION` ➔ `CONFLICT_RESOLUTION` ➔ `SYNTHESIS` ➔ `REPORTING`.
    - Point to the **Inter-Agent Message Protocol Bus**:
      - Filter by **`CONFLICTS`** to display the formal `CONFLICT_DETECTED` message.
-     - **What to say**: *"The Performance Agent initially proposed Link Congestion. But the Correlation Agent cross-examined the Infrastructure Agent, which reported router CPU at 99.4%, while link utilization was only 14% and queue drops were zero! The swarm refuted congestion through empirical counter-evidence and confirmed Control Plane Processor Saturation with 94% Bayesian confidence."*
+     - **What to say**: *"The Performance Agent initially proposed Link Congestion. But the Correlation Agent cross-examined the Infrastructure Agent, which reported router CPU at 99.4%, while link utilization was only 14% and queue drops were zero! The swarm refuted congestion through empirical counter-evidence and confirmed Control Plane Processor Saturation with 92% evidence-based calibrated confidence."*
 3. **Structured Swarm Explanation ("Why did the agents reach this conclusion?")**:
    - Show corroborating vs refuting evidence, inter-agent query traces, and explicit digital twin assumptions.
 
@@ -239,7 +239,7 @@ The platform handles heterogeneous telemetry formats via `TelemetryNormalizer`:
 
 ### 6.3 Confidence Scoring Heuristic
 Confidence is computed using an evidential heuristic combining:
-- **Bayesian Anomaly Severity Weights**: Cumulative weighted severity across latency, loss, CRC errors, and queues.
+- **Heuristic Anomaly Severity Weights**: Cumulative weighted severity across latency, loss, CRC errors, and queues.
 - **Cross-Agent Agreement Ratio**: Corroboration between performance, infrastructure, and connectivity agents.
 - **Evidential Penalties**: Explicit penalties for missing telemetry dimensions and unverified hypotheses.
 
