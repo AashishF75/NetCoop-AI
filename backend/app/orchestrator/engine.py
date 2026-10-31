@@ -200,6 +200,7 @@ class MultiAgentOrchestrator:
             "confidence": round(confidence, 4),
             "affected_devices": affected_devices,
             "execution_time_ms": round(elapsed_ms, 2),
+            "telemetry": [r.model_dump() for r in telemetry],
             "canonical_report": canonical_report.model_dump(),
             "message_bus": [m.model_dump() for m in message_bus],
             "execution_trace": execution_trace,

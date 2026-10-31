@@ -111,8 +111,9 @@ export default function AgentActivityPanel({ agentStates = [], activeAgentId, is
             bg: 'from-slate-900 to-slate-950',
           };
           const Icon = meta.icon;
-          const isAnalyzing = agent.status === 'ANALYZING';
-          const isComplete = agent.status === 'COMPLETE';
+          const isAnalyzing = agent.status === 'ANALYZING' || (isDiagnosing && agent.agent_id === activeAgentId);
+          const currentStatus = (isDiagnosing && agent.agent_id === activeAgentId) ? 'ANALYZING' : agent.status;
+          const isComplete = agent.status === 'COMPLETE' && !isDiagnosing;
 
           return (
             <motion.div
@@ -121,7 +122,7 @@ export default function AgentActivityPanel({ agentStates = [], activeAgentId, is
               animate={{
                 opacity: 1,
                 y: 0,
-                scale: isAnalyzing ? [1, 1.02, 1] : 1,
+                scale: isAnalyzing ? [1, 1.03, 1] : 1,
               }}
               transition={{
                 duration: 0.35,
@@ -132,7 +133,7 @@ export default function AgentActivityPanel({ agentStates = [], activeAgentId, is
               }}
               whileHover={{ y: -3, transition: { duration: 0.2 } }}
               className={`relative rounded-xl p-3.5 bg-gradient-to-b ${meta.bg} border ${
-                isAnalyzing ? 'border-cyan-400 shadow-lg shadow-cyan-500/20' : meta.border
+                isAnalyzing ? 'border-cyan-400 shadow-lg shadow-cyan-500/25 ring-1 ring-cyan-400/50' : meta.border
               } transition-all flex flex-col justify-between`}
             >
               <div>
@@ -140,7 +141,7 @@ export default function AgentActivityPanel({ agentStates = [], activeAgentId, is
                   <div className="p-1.5 rounded-lg bg-[#141b2b] border border-[#232f48]">
                     <Icon className="w-4 h-4 text-slate-200" />
                   </div>
-                  {getStatusBadge(agent.status)}
+                  {getStatusBadge(currentStatus)}
                 </div>
 
                 <h3 className="text-xs font-bold text-white tracking-tight">{meta.name}</h3>
