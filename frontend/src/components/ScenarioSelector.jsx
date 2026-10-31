@@ -67,20 +67,20 @@ Edge-Switch-01,140.0,7.0,18.0,0.0`;
   };
 
   return (
-    <div className="rounded-2xl bg-[#0f1422] border border-[#1f293d] p-4 shadow-xl">
+    <div className="rounded-2xl bg-[#0b0e18] border border-slate-800/90 p-4 shadow-xl">
       {/* Tab Switcher */}
-      <div className="flex items-center justify-between gap-3 mb-3.5 border-b border-[#1f293d] pb-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3.5 border-b border-slate-800/80 pb-2.5">
         <div className="flex items-center gap-2">
           <ListFilter className="w-4 h-4 text-cyan-400" />
           <h2 className="text-sm font-bold text-white tracking-wide">Evaluation Scenario Benchmark Suite</h2>
         </div>
 
-        <div className="flex items-center gap-1 bg-[#0a0d16] p-1 rounded-xl border border-[#1b2438] text-xs font-medium">
+        <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs font-medium">
           <button
             onClick={() => setActiveTab('catalog')}
             className={`px-3 py-1 rounded-lg transition-all ${
               activeTab === 'catalog'
-                ? 'bg-cyan-500 text-black font-bold shadow-md shadow-cyan-500/20'
+                ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
@@ -90,7 +90,7 @@ Edge-Switch-01,140.0,7.0,18.0,0.0`;
             onClick={() => setActiveTab('custom')}
             className={`px-3 py-1 rounded-lg transition-all ${
               activeTab === 'custom'
-                ? 'bg-cyan-500 text-black font-bold shadow-md shadow-cyan-500/20'
+                ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
@@ -113,8 +113,8 @@ Edge-Switch-01,140.0,7.0,18.0,0.0`;
                 onClick={() => onSelectScenario(sc.id)}
                 className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
                   isSelected
-                    ? 'bg-cyan-950/40 border-cyan-400 shadow-md shadow-cyan-500/10'
-                    : 'bg-[#0a0d16] border-[#1b253b] hover:border-[#2b3c61]'
+                    ? 'bg-cyan-950/40 border-cyan-400/80 shadow-md shadow-cyan-950/30'
+                    : 'bg-[#0e1422] border-slate-800/80 hover:border-slate-700 hover:bg-[#12192b]'
                 }`}
               >
                 <div>

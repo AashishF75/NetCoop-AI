@@ -324,7 +324,7 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
   return (
     <div className="space-y-6">
       {/* Top Banner & Title */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl">
+      <div className="bg-[#0b0e18] border border-slate-800/90 rounded-2xl p-6 shadow-xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
@@ -335,8 +335,8 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
               <span
                 className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider ${
                   onlineCollectors.length > 0 || streamingDevices.length > 0
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                    : 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                    ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                    : 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
                 }`}
               >
                 {onlineCollectors.length > 0
@@ -344,7 +344,7 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
                   : '🟣 Simulation / Local Probe Mode'}
               </span>
             </div>
-            <p className="text-slate-400 text-sm mt-1">
+            <p className="text-slate-400 text-sm mt-1 leading-relaxed">
               Deployable on-premise network collectors stream private LAN router/switch telemetry securely outbound via HTTPS to the cloud NOC.
             </p>
           </div>
@@ -352,7 +352,7 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setShowEnrollModal(true)}
-              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-semibold transition flex items-center gap-1.5 shadow-md"
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-semibold transition flex items-center gap-1.5 shadow-md shadow-indigo-950/30"
             >
               <span>🔑</span> Pair New Collector
             </button>
@@ -375,7 +375,7 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
               className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 shadow-lg ${
                 diagnosingLive
                   ? 'bg-emerald-700 text-white cursor-wait opacity-80'
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/30'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40'
               }`}
             >
               {diagnosingLive ? (
@@ -397,24 +397,24 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
         </div>
 
         {/* Global Summary Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-5 border-t border-slate-800">
-          <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-5 border-t border-slate-800/80">
+          <div className="bg-[#0f172a]/70 p-3.5 rounded-xl border border-slate-800/80">
             <div className="text-xs text-slate-400 font-medium">On-Premise Collectors</div>
             <div className="text-xl font-bold text-slate-100 mt-1">
               {onlineCollectors.length} <span className="text-xs text-slate-400 font-normal">/ {collectors.length} paired</span>
             </div>
           </div>
-          <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+          <div className="bg-[#0f172a]/70 p-3.5 rounded-xl border border-slate-800/80">
             <div className="text-xs text-slate-400 font-medium">Monitored LAN Devices</div>
             <div className="text-xl font-bold text-indigo-300 mt-1">
               {streamingDevices.length} <span className="text-xs text-slate-400 font-normal">/ {devices.length} registered</span>
             </div>
           </div>
-          <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+          <div className="bg-[#0f172a]/70 p-3.5 rounded-xl border border-slate-800/80">
             <div className="text-xs text-slate-400 font-medium">Direct Host Reachability</div>
             <div className="text-xl font-bold text-emerald-400 mt-1">{connectedCount} Active</div>
           </div>
-          <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+          <div className="bg-[#0f172a]/70 p-3.5 rounded-xl border border-slate-800/80">
             <div className="text-xs text-slate-400 font-medium">Transport Security</div>
             <div className="text-xl font-bold text-cyan-300 mt-1">Outbound HTTPS / WSS</div>
           </div>

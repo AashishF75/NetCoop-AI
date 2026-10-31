@@ -1,52 +1,50 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, Cpu, Radio, Network, FileCheck2, CheckCircle2, Clock, Loader2, ArrowRightLeft } from 'lucide-react';
 
 const AGENT_META = {
   'perf-agent-01': {
     name: 'Performance Agent',
-    role: 'Latency, Jitter, Loss & Queue Drops',
+    role: 'Latency, Jitter, Packet Loss & Queue Drops',
     icon: Network,
-    accent: 'cyan',
-    border: 'border-cyan-500/40',
-    bg: 'from-cyan-950/30 to-blue-950/20',
+    accentColor: 'text-cyan-400',
+    indicatorColor: 'bg-cyan-400',
+    accentBorder: 'border-cyan-500/40',
   },
   'infra-agent-01': {
     name: 'Infrastructure Health Agent',
-    role: 'CPU, Memory, Transceivers & CRC Errors',
+    role: 'Host CPU, Memory, Discards & CRC Errors',
     icon: Cpu,
-    accent: 'purple',
-    border: 'border-purple-500/40',
-    bg: 'from-purple-950/30 to-slate-950/20',
+    accentColor: 'text-violet-400',
+    indicatorColor: 'bg-violet-400',
+    accentBorder: 'border-violet-500/40',
   },
   'conn-agent-01': {
     name: 'Connectivity Analysis Agent',
     role: 'Wireless RF (RSSI/SNR), DNS & DHCP',
     icon: Radio,
-    accent: 'emerald',
-    border: 'border-emerald-500/40',
-    bg: 'from-emerald-950/30 to-slate-950/20',
+    accentColor: 'text-emerald-400',
+    indicatorColor: 'bg-emerald-400',
+    accentBorder: 'border-emerald-500/40',
   },
   'corr-agent-01': {
     name: 'Fault Correlation Agent',
-    role: 'Inter-Agent Synthesis & Conflict Resolution',
+    role: 'Inter-Agent Synthesis & Cross-Examination',
     icon: ArrowRightLeft,
-    accent: 'amber',
-    border: 'border-amber-500/40',
-    bg: 'from-amber-950/30 to-slate-950/20',
+    accentColor: 'text-amber-400',
+    indicatorColor: 'bg-amber-400',
+    accentBorder: 'border-amber-500/40',
   },
   'recom-agent-01': {
     name: 'Recommendation & Reporting Agent',
     role: 'Remediation Runbooks & Canonical Report',
     icon: FileCheck2,
-    accent: 'rose',
-    border: 'border-rose-500/40',
-    bg: 'from-rose-950/30 to-slate-950/20',
+    accentColor: 'text-sky-400',
+    indicatorColor: 'bg-sky-400',
+    accentBorder: 'border-sky-500/40',
   },
 };
 
 export default function AgentActivityPanel({ agentStates = [], activeAgentId, isDiagnosing }) {
-  // Fallback defaults if no diagnosis run yet
   const defaultAgents = [
     { agent_id: 'perf-agent-01', status: 'IDLE', current_task: 'Standing by for telemetry ingestion', messages_sent: 0, messages_received: 0 },
     { agent_id: 'infra-agent-01', status: 'IDLE', current_task: 'Standing by for telemetry ingestion', messages_sent: 0, messages_received: 0 },
@@ -61,28 +59,28 @@ export default function AgentActivityPanel({ agentStates = [], activeAgentId, is
     switch (status) {
       case 'ANALYZING':
         return (
-          <span className="flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 animate-pulse">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
             <Loader2 className="w-3 h-3 animate-spin text-cyan-400" />
             ANALYZING
           </span>
         );
       case 'COMPLETE':
         return (
-          <span className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
             <CheckCircle2 className="w-3 h-3 text-emerald-400" />
             RESOLVED
           </span>
         );
       case 'AWAITING_PEER':
         return (
-          <span className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
             <Clock className="w-3 h-3 text-amber-400" />
             CROSS-EXAMINING
           </span>
         );
       default:
         return (
-          <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+          <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700/80">
             IDLE
           </span>
         );
@@ -90,74 +88,74 @@ export default function AgentActivityPanel({ agentStates = [], activeAgentId, is
   };
 
   return (
-    <div className="rounded-2xl bg-[#0f1422] border border-[#1f293d] p-4 shadow-xl">
-      <div className="flex items-center justify-between gap-2 mb-3.5 border-b border-[#1f293d] pb-2.5">
+    <div className="rounded-xl bg-slate-900/80 border border-slate-800 p-4 shadow-md">
+      <div className="flex items-center justify-between gap-2 mb-3.5 border-b border-slate-800 pb-2.5">
         <div className="flex items-center gap-2">
           <Bot className="w-4 h-4 text-cyan-400" />
-          <h2 className="text-sm font-bold text-white tracking-wide">Multi-Agent Swarm Status</h2>
+          <h2 className="text-sm font-bold text-slate-100 tracking-wide">Multi-Agent Swarm Status</h2>
         </div>
         <span className="text-xs font-mono text-slate-400">
-          5 Agents Coordinated
+          5 Autonomous Diagnostic Agents
         </span>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-        {displayAgents.map((agent, index) => {
+        {displayAgents.map((agent) => {
           const meta = AGENT_META[agent.agent_id] || {
             name: agent.name || agent.agent_id,
-            role: agent.role || 'Autonomous Network Agent',
+            role: agent.role || 'Domain Analysis Agent',
             icon: Bot,
-            border: 'border-slate-700',
-            bg: 'from-slate-900 to-slate-950',
+            accentColor: 'text-cyan-400',
+            indicatorColor: 'bg-cyan-400',
+            accentBorder: 'border-cyan-500/40',
           };
-          const Icon = meta.icon;
-          const isAnalyzing = agent.status === 'ANALYZING' || (isDiagnosing && agent.agent_id === activeAgentId);
-          const currentStatus = (isDiagnosing && agent.agent_id === activeAgentId) ? 'ANALYZING' : agent.status;
-          const isComplete = agent.status === 'COMPLETE' && !isDiagnosing;
+          const AgentIcon = meta.icon;
+          const isActive = activeAgentId === agent.agent_id;
 
           return (
-            <motion.div
+            <div
               key={agent.agent_id}
-              initial={{ opacity: 0, y: 15 }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                scale: isAnalyzing ? [1, 1.03, 1] : 1,
-              }}
-              transition={{
-                duration: 0.35,
-                delay: index * 0.08,
-                repeat: isAnalyzing ? Infinity : 0,
-                repeatType: 'reverse',
-                repeatDelay: 1.2,
-              }}
-              whileHover={{ y: -3, transition: { duration: 0.2 } }}
-              className={`relative rounded-xl p-3.5 bg-gradient-to-b ${meta.bg} border ${
-                isAnalyzing ? 'border-cyan-400 shadow-lg shadow-cyan-500/25 ring-1 ring-cyan-400/50' : meta.border
-              } transition-all flex flex-col justify-between`}
+              className={`rounded-lg p-3.5 transition-all border flex flex-col justify-between ${
+                isActive
+                  ? 'bg-slate-800/90 border-cyan-500/80 ring-1 ring-cyan-500/30 shadow-md shadow-cyan-950/40'
+                  : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
+              }`}
             >
               <div>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="p-1.5 rounded-lg bg-[#141b2b] border border-[#232f48]">
-                    <Icon className="w-4 h-4 text-slate-200" />
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-md bg-slate-900 border border-slate-800">
+                      <AgentIcon className={`w-4 h-4 ${meta.accentColor}`} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-200 leading-tight">
+                        {meta.name}
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        {agent.agent_id}
+                      </div>
+                    </div>
                   </div>
-                  {getStatusBadge(currentStatus)}
+                  {getStatusBadge(agent.status)}
                 </div>
 
-                <h3 className="text-xs font-bold text-white tracking-tight">{meta.name}</h3>
-                <p className="text-[10px] text-slate-400 mb-2 leading-tight">{meta.role}</p>
+                <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">
+                  {meta.role}
+                </p>
 
-                <div className="text-[11px] font-mono text-slate-300 bg-[#0a0d17]/80 rounded-lg p-2 border border-[#1b253b] mb-3 min-h-[46px] flex items-center">
-                  <p className="line-clamp-2">{agent.current_task || 'Idle'}</p>
+                <div className="bg-slate-900/90 rounded p-2 border border-slate-800/80 mb-2">
+                  <div className="text-[10px] uppercase font-mono text-slate-500 mb-0.5">Current Action</div>
+                  <div className="text-xs text-slate-300 font-mono truncate" title={agent.current_task}>
+                    {agent.current_task || 'Awaiting telemetry...'}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-2 border-t border-[#1b253b] text-[10px] font-mono text-slate-400">
-                <span>Sent: <strong className="text-white">{agent.messages_sent || 0}</strong></span>
-                <span>Recv: <strong className="text-white">{agent.messages_received || 0}</strong></span>
-                <span className="text-cyan-400">v1.0.0</span>
+              <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-2 border-t border-slate-800/80">
+                <span>Sent: <strong className="text-slate-200">{agent.messages_sent || 0}</strong></span>
+                <span>Recv: <strong className="text-slate-200">{agent.messages_received || 0}</strong></span>
               </div>
-            </motion.div>
+            </div>
           );
         })}
       </div>

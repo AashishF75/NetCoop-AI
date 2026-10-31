@@ -292,110 +292,144 @@ export default function App() {
       {/* Main Dashboard Grid */}
       <main className="flex-1 max-w-[1700px] w-full mx-auto px-4 sm:px-6 py-5 space-y-5">
         
-        {/* Top-Level Navigation View Switcher */}
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0d121f] p-2 rounded-xl border border-[#1f293d] shadow-lg">
-          <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
-            <button
-              onClick={() => setActiveView('command_center')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
-                activeView === 'command_center'
-                  ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-900/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
-            >
-              <span>🌟</span>
-              <span>NOC Command Center</span>
-            </button>
+        {/* Top-Level Navigation View Switcher (Consolidated 4-Domain NOC Architecture) */}
+        <div className="bg-[#0b0e18]/90 backdrop-blur-md p-2 rounded-xl border border-slate-800/90 shadow-xl space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+              <button
+                onClick={() => setActiveView('command_center')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
+                  activeView === 'command_center'
+                    ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-900/30'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`}
+              >
+                <span>🌟</span>
+                <span>NOC Command Center</span>
+              </button>
 
-            <button
-              onClick={() => setActiveView('integrations')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
-                activeView === 'integrations'
-                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-900/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
-            >
-              <span>🔌</span>
-              <span>Live Integrations</span>
-            </button>
+              <button
+                onClick={() => setActiveView('integrations')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
+                  activeView === 'integrations'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-900/30'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`}
+              >
+                <span>🔌</span>
+                <span>Live Network Integrations</span>
+              </button>
 
-            <button
-              onClick={() => setActiveView('ops')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
-                activeView === 'ops'
-                  ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-900/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
-            >
-              <span>🧭</span>
-              <span>NOC Operations & Replay</span>
-            </button>
+              <button
+                onClick={() => setActiveView('ops')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
+                  activeView === 'ops'
+                    ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-900/30'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`}
+              >
+                <span>🧭</span>
+                <span>Multi-Agent Investigation Replay</span>
+              </button>
 
-            <button
-              onClick={() => setActiveView('digital_twin')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
-                activeView === 'digital_twin'
-                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-900/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
-            >
-              <span>🌐</span>
-              <span>Network Digital Twin</span>
-            </button>
+              <button
+                onClick={() => {
+                  if (!['generator', 'digital_twin', 'what_if', 'prioritizer', 'fault_injection'].includes(activeView)) {
+                    setActiveView('generator');
+                  }
+                }}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
+                  ['generator', 'digital_twin', 'what_if', 'prioritizer', 'fault_injection'].includes(activeView)
+                    ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-indigo-600 text-white shadow-md shadow-amber-900/30'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`}
+              >
+                <span>🧪</span>
+                <span>Benchmark & Simulation Studio</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">
+                  5 Tools
+                </span>
+              </button>
+            </div>
 
-            <button
-              onClick={() => setActiveView('what_if')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
-                activeView === 'what_if'
-                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-900/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
-            >
-              <span>🔬</span>
-              <span>What-If Remediation Simulator</span>
-            </button>
-
-            <button
-              onClick={() => setActiveView('prioritizer')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
-                activeView === 'prioritizer'
-                  ? 'bg-gradient-to-r from-rose-600 to-amber-600 text-white shadow-md shadow-rose-900/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
-            >
-              <span>🚨</span>
-              <span>Incident Prioritization</span>
-            </button>
-
-            <button
-              onClick={() => setActiveView('fault_injection')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
-                activeView === 'fault_injection'
-                  ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-900/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
-            >
-              <span>⚡</span>
-              <span>Fault Injection Studio</span>
-            </button>
-
-            <button
-              onClick={() => setActiveView('generator')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
-                activeView === 'generator'
-                  ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-bold shadow-md shadow-amber-900/30'
-                  : 'text-amber-400/90 hover:text-amber-300 hover:bg-slate-800/60'
-              }`}
-            >
-              <span>🧪</span>
-              <span>Official Telemetry Benchmark</span>
-            </button>
+            <div className="hidden xl:flex items-center gap-2 text-xs font-mono text-slate-400 pr-2">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+              <span>Domain: {['generator', 'digital_twin', 'what_if', 'prioritizer', 'fault_injection'].includes(activeView) ? 'SIMULATION STUDIO' : activeView.toUpperCase().replace(/_/g, ' ')}</span>
+            </div>
           </div>
 
-          <div className="hidden xl:flex items-center gap-2 text-xs font-mono text-slate-400 pr-2">
-            <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-            <span>Mode: {activeView.toUpperCase().replace(/_/g, ' ')}</span>
-          </div>
+          {/* Secondary Sub-Navigation for Benchmark & Simulation Studio */}
+          {['generator', 'digital_twin', 'what_if', 'prioritizer', 'fault_injection'].includes(activeView) && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-1.5 text-xs"
+            >
+              <span className="text-[11px] font-mono text-slate-400 px-2 uppercase font-bold tracking-wider">
+                Studio Suite:
+              </span>
+
+              <button
+                onClick={() => setActiveView('generator')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-all ${
+                  activeView === 'generator'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                <span>🧪</span>
+                <span>Official Telemetry Benchmark</span>
+              </button>
+
+              <button
+                onClick={() => setActiveView('digital_twin')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-all ${
+                  activeView === 'digital_twin'
+                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                <span>🌐</span>
+                <span>Network Digital Twin</span>
+              </button>
+
+              <button
+                onClick={() => setActiveView('what_if')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-all ${
+                  activeView === 'what_if'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                <span>🔬</span>
+                <span>What-If Remediation Simulator</span>
+              </button>
+
+              <button
+                onClick={() => setActiveView('prioritizer')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-all ${
+                  activeView === 'prioritizer'
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                <span>🚨</span>
+                <span>Incident Prioritizer</span>
+              </button>
+
+              <button
+                onClick={() => setActiveView('fault_injection')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-all ${
+                  activeView === 'fault_injection'
+                    ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                <span>⚡</span>
+                <span>Fault Injection Studio</span>
+              </button>
+            </motion.div>
+          )}
         </div>
 
         {/* VIEW 0: Autonomous NOC Command Center */}

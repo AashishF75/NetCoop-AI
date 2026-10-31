@@ -1,5 +1,4 @@
 import React from 'react';
-import { motion } from 'framer-motion';
 import { Activity, ShieldCheck, Play, FileJson, Cpu, Layers, RefreshCw } from 'lucide-react';
 
 export default function Header({
@@ -11,144 +10,151 @@ export default function Header({
   onOpenReport,
   onOpenProtocolTester,
 }) {
-  const getStatusColor = () => {
+  const getStatusBadge = () => {
     switch (status) {
-      case 'CONFIRMED': return 'bg-rose-500/20 text-rose-400 border-rose-500/40';
-      case 'SUSPECTED': return 'bg-amber-500/20 text-amber-400 border-amber-500/40';
-      case 'INCONCLUSIVE': return 'bg-purple-500/20 text-purple-400 border-purple-500/40';
-      case 'HEALTHY': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
-      default: return 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40';
+      case 'CONFIRMED':
+        return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+      case 'SUSPECTED':
+        return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+      case 'INCONCLUSIVE':
+        return 'bg-purple-500/15 text-purple-300 border-purple-500/30';
+      case 'HEALTHY':
+        return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+      default:
+        return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
     }
   };
 
+  const getOriginBadge = () => {
+    switch (telemetryOrigin) {
+      case 'LIVE_DEVICE':
+        return {
+          bg: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
+          dot: 'bg-emerald-400',
+          label: 'LIVE_DEVICE',
+        };
+      case 'LIVE_HOST':
+      case 'LIVE':
+        return {
+          bg: 'bg-teal-500/15 text-teal-300 border-teal-500/40',
+          dot: 'bg-teal-400',
+          label: 'LIVE_HOST',
+        };
+      case 'GENERATED_TEST':
+        return {
+          bg: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
+          dot: 'bg-amber-400',
+          label: 'BENCHMARK GEN',
+        };
+      case 'CUSTOM_IMPORT':
+        return {
+          bg: 'bg-blue-500/15 text-blue-300 border-blue-500/40',
+          dot: 'bg-blue-400',
+          label: 'CUSTOM IMPORT',
+        };
+      default:
+        return {
+          bg: 'bg-slate-800 text-slate-300 border-slate-700',
+          dot: 'bg-slate-400',
+          label: 'SIMULATED',
+        };
+    }
+  };
+
+  const origin = getOriginBadge();
+
   return (
-    <header className="border-b border-[#1f293d] bg-[#0c101b]/90 backdrop-blur-md sticky top-0 z-40 px-6 py-3.5">
-      <div className="max-w-[1700px] mx-auto flex flex-wrap items-center justify-between gap-4">
+    <header className="border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40 px-4 lg:px-6 py-2.5">
+      <div className="max-w-[1750px] mx-auto flex items-center justify-between gap-4">
         
-        {/* Title & Brand */}
+        {/* Brand & Identity */}
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 border border-cyan-400/30">
-              <Activity className="w-5 h-5 text-white animate-pulse" />
-            </div>
-            <span className="absolute -top-1 -right-1 flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
-            </span>
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-sm shadow-cyan-500/20">
+            <Activity className="w-4 h-4 text-white" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                NetCoop <span className="text-cyan-400 font-extrabold">AI</span>
-              </h1>
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider bg-cyan-950/70 border border-cyan-800/60 text-cyan-300">
-                IIT-BBS Grand Finale
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 font-mono">
-              Multi-Agent Network Fault Diagnosis & Canonical Protocol Interoperability
-            </p>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-1.5">
+              NetCoop <span className="text-cyan-400 font-extrabold">AI</span>
+            </h1>
+            <span className="hidden sm:inline-block text-[11px] px-2 py-0.5 rounded font-medium bg-slate-800/80 border border-slate-700 text-slate-300">
+              IIT-BBS Grand Finale
+            </span>
           </div>
         </div>
 
-        {/* Live System Badges */}
-        <div className="hidden lg:flex items-center gap-3 text-xs font-mono">
-          {telemetryOrigin === 'LIVE_DEVICE' ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold shadow-sm shadow-emerald-900/30">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>LIVE DEVICE</span>
-            </div>
-          ) : telemetryOrigin === 'LIVE_HOST' || telemetryOrigin === 'LIVE' ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-500/40 text-xs font-bold">
-              <span className="w-2 h-2 rounded-full bg-teal-400"></span>
-              <span>LIVE HOST PROBE</span>
-            </div>
-          ) : telemetryOrigin === 'GENERATED_TEST' ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-300 border border-yellow-500/50 text-xs font-bold shadow-sm shadow-yellow-950/40">
-              <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
-              <span>GENERATED TEST DATA</span>
-            </div>
-          ) : telemetryOrigin === 'CUSTOM_IMPORT' ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold">
-              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-              <span>CUSTOM IMPORT</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/40 text-xs font-bold">
-              <span className="w-2 h-2 rounded-full bg-purple-400"></span>
-              <span>SIMULATED SCENARIO</span>
-            </div>
-          )}
-
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#111726] border border-[#1f293d]">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-            <span className="text-slate-400">Protocol:</span>
-            <span className="text-cyan-300 font-bold">Canonical v1.0.0</span>
+        {/* System & Telemetry Provenance Status */}
+        <div className="flex items-center gap-2 sm:gap-3 text-xs font-mono">
+          {/* Prominent Provenance Badge */}
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-bold tracking-wide ${origin.bg}`}>
+            <span className={`w-2 h-2 rounded-full ${origin.dot} animate-pulse`}></span>
+            <span>{origin.label}</span>
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#111726] border border-[#1f293d]">
-            <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="text-slate-400">Active Agents:</span>
-            <span className="text-slate-200 font-bold">5 Autonomous</span>
+          {/* Incident Callout */}
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+            <span className="text-slate-500">INC:</span>
+            <span className="font-semibold text-slate-200">{incidentId || 'IDLE'}</span>
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#111726] border border-[#1f293d]">
-            <span className="text-slate-400">Incident:</span>
-            <span className="text-amber-300 font-bold">{incidentId || 'INC-IDLE'}</span>
-          </div>
-
+          {/* Diagnosis Status */}
           {status && (
-            <div className={`px-3 py-1.5 rounded-lg border font-bold uppercase tracking-wider ${getStatusColor()}`}>
-              {status}
+            <div className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold ${getStatusBadge()}`}>
+              <span>{status}</span>
             </div>
           )}
+
+          {/* Active Agents Badge */}
+          <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 text-slate-400">
+            <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="text-slate-300 font-medium">5 Agents Active</span>
+          </div>
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2.5">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={onOpenProtocolTester}
-            className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg bg-[#141b2d] border border-[#1f293d] hover:border-cyan-500/50 hover:bg-[#1a233a] text-slate-200 transition-colors"
-          >
-            <ShieldCheck className="w-4 h-4 text-cyan-400" />
-            <span className="hidden sm:inline">Protocol Inspector</span>
-          </motion.button>
+        <div className="flex items-center gap-2">
+          {onOpenProtocolTester && (
+            <button
+              onClick={onOpenProtocolTester}
+              title="Validate Canonical Schema"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-medium transition"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+              <span>Protocol</span>
+            </button>
+          )}
 
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={onOpenReport}
-            className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg bg-[#141b2d] border border-[#1f293d] hover:border-cyan-500/50 hover:bg-[#1a233a] text-slate-200 transition-colors"
-          >
-            <FileJson className="w-4 h-4 text-emerald-400" />
-            <span className="hidden sm:inline">JSON Report</span>
-          </motion.button>
+          {onOpenReport && (
+            <button
+              onClick={onOpenReport}
+              title="View Canonical JSON Report"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-medium transition"
+            >
+              <FileJson className="w-3.5 h-3.5 text-slate-400" />
+              <span className="hidden sm:inline">Report JSON</span>
+            </button>
+          )}
 
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            disabled={isDiagnosing}
+          <button
             onClick={onRunDiagnosis}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all shadow-lg ${
+            disabled={isDiagnosing}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition shadow-sm ${
               isDiagnosing
-                ? 'bg-cyan-600/50 text-cyan-200 cursor-not-allowed border border-cyan-500/40'
-                : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black shadow-cyan-500/25 border border-cyan-300/40 cursor-pointer'
+                ? 'bg-cyan-700 text-white cursor-wait opacity-80'
+                : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-900/30'
             }`}
           >
             {isDiagnosing ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin text-cyan-200" />
-                <span>Agents Diagnosing...</span>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Diagnosing...</span>
               </>
             ) : (
               <>
-                <Play className="w-4 h-4 fill-black" />
-                <span>Run Multi-Agent Diagnosis</span>
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Run Diagnosis</span>
               </>
             )}
-          </motion.button>
+          </button>
         </div>
 
       </div>

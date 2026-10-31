@@ -8,46 +8,68 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background-color: #07090e;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #090d16;
   color: #f1f5f9;
   overflow-x: hidden;
+  letter-spacing: -0.01em;
 }
 
 /* Custom scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #0b0f17;
+  background: #090d16;
 }
 ::-webkit-scrollbar-thumb {
   background: #1e293b;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #334155;
 }
 
+/* Enterprise NOC Design Tokens */
+.noc-panel {
+  background-color: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(51, 65, 85, 0.4);
+  border-radius: 12px;
+}
+
+.noc-card {
+  background-color: #0b1120;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+}
+
+.noc-card-elevated {
+  background-color: #0e1628;
+  border: 1px solid #22324e;
+  border-radius: 10px;
+}
+
 /* React Flow NOC Styling */
 .react-flow__pane {
-  background-color: #080b12 !important;
+  background-color: #090d16 !important;
 }
 
 .react-flow__background {
-  background-color: #080b12 !important;
+  background-color: #090d16 !important;
 }
 
 .react-flow__controls {
-  background: #111827 !important;
-  border: 1px solid #1f293d !important;
+  background: #0f172a !important;
+  border: 1px solid #1e293b !important;
   border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
 }
 
 .react-flow__controls-button {
-  background: #111827 !important;
-  border-bottom: 1px solid #1f293d !important;
+  background: #0f172a !important;
+  border-bottom: 1px solid #1e293b !important;
   color: #94a3b8 !important;
 }
 
@@ -56,37 +78,17 @@ body {
   color: #38bdf8 !important;
 }
 
-/* Pulsing red alert for implicated nodes */
-@keyframes nodePulseAlert {
-  0% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7), 0 0 15px rgba(239, 68, 68, 0.4);
+/* Subtle, crisp alert for implicated nodes (no blinding flash) */
+@keyframes subtleNodeAlert {
+  0%, 100% {
+    box-shadow: 0 0 0 1px #ef4444, 0 4px 16px rgba(239, 68, 68, 0.25);
   }
-  70% {
-    box-shadow: 0 0 0 16px rgba(239, 68, 68, 0), 0 0 25px rgba(239, 68, 68, 0.6);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0), 0 0 15px rgba(239, 68, 68, 0.4);
+  50% {
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4), 0 4px 20px rgba(239, 68, 68, 0.45);
   }
 }
 
 .node-implicated-pulse {
-  animation: nodePulseAlert 1.8s infinite;
+  animation: subtleNodeAlert 2.4s ease-in-out infinite;
   border-color: #ef4444 !important;
-}
-
-/* Glow effects */
-.glow-cyan {
-  box-shadow: 0 0 15px rgba(6, 182, 212, 0.35);
-}
-
-.glow-rose {
-  box-shadow: 0 0 15px rgba(244, 63, 94, 0.35);
-}
-
-.glow-emerald {
-  box-shadow: 0 0 15px rgba(16, 185, 129, 0.35);
-}
-
-.glow-amber {
-  box-shadow: 0 0 15px rgba(245, 158, 11, 0.35);
 }

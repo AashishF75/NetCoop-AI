@@ -84,24 +84,22 @@ export default function CommandCenterView({ onNavigateToReplay }) {
   return (
     <div className="space-y-6">
       {/* Top Banner & Scenario Intelligence Selector */}
-      <div className="bg-[#0b0f19] border border-[#1f293d] rounded-2xl p-5 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-cyan-600/10 via-purple-600/5 to-transparent rounded-full blur-3xl pointer-events-none" />
-
+      <div className="bg-[#0b0e18] border border-slate-800/90 rounded-2xl p-5 shadow-xl relative overflow-hidden">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center gap-1.5">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
                 AUTONOMOUS NOC COCKPIT
               </span>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-mono text-slate-400 bg-slate-800/80 border border-slate-700">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-mono text-slate-400 bg-slate-900 border border-slate-800">
                 SWARM ACTIVE • CANONICAL v1.0.0
               </span>
             </div>
-            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
               Autonomous Network Intelligence Command Center
             </h1>
-            <p className="text-xs text-slate-400 mt-1 max-w-3xl">
+            <p className="text-xs text-slate-400 mt-1 max-w-3xl leading-relaxed">
               Real-time cross-incident topological correlation, predictive SLA drift warnings, and auditable point-deduction health diagnostics evaluated by five cooperating agents.
             </p>
           </div>
@@ -115,7 +113,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
               <select
                 value={selectedScenarioId}
                 onChange={handleScenarioChange}
-                className="bg-[#0f172a] border border-[#334155] text-slate-100 text-xs rounded-lg px-3 py-2 font-medium focus:outline-none focus:border-cyan-500 transition-colors cursor-pointer"
+                className="bg-[#0f172a] border border-slate-700 text-slate-100 text-xs rounded-lg px-3 py-2 font-medium focus:outline-none focus:border-cyan-500 transition-colors cursor-pointer"
               >
                 {scenarios.map((sc) => (
                   <option key={sc.id} value={sc.id}>
@@ -128,7 +126,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
             <button
               onClick={() => loadIntelligenceData(selectedScenarioId)}
               disabled={loading}
-              className="mt-4 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs rounded-lg shadow-md shadow-cyan-900/30 transition-all flex items-center gap-2 disabled:opacity-50"
+              className="mt-4 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs rounded-lg shadow-md shadow-cyan-950/40 transition-all flex items-center gap-2 disabled:opacity-50"
             >
               <span>{loading ? 'Analyzing Swarm...' : '↻ Refresh Intelligence'}</span>
             </button>
@@ -136,12 +134,12 @@ export default function CommandCenterView({ onNavigateToReplay }) {
         </div>
 
         {/* Intelligence Sub-Tabs */}
-        <div className="flex items-center gap-2 mt-6 pt-4 border-t border-slate-800/80 text-xs font-medium">
+        <div className="flex flex-wrap items-center gap-2 mt-5 pt-3.5 border-t border-slate-800/80 text-xs font-medium">
           <button
             onClick={() => setActiveTab('overview')}
             className={`px-3 py-1.5 rounded-lg transition-colors ${
               activeTab === 'overview'
-                ? 'bg-slate-800 text-white font-bold border border-slate-700'
+                ? 'bg-slate-800 text-white font-bold border border-slate-700 shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -151,7 +149,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
             onClick={() => setActiveTab('correlations')}
             className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
               activeTab === 'correlations'
-                ? 'bg-slate-800 text-white font-bold border border-slate-700'
+                ? 'bg-slate-800 text-white font-bold border border-slate-700 shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -166,7 +164,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
             onClick={() => setActiveTab('proactive')}
             className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
               activeTab === 'proactive'
-                ? 'bg-slate-800 text-white font-bold border border-slate-700'
+                ? 'bg-slate-800 text-white font-bold border border-slate-700 shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -181,7 +179,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
             onClick={() => setActiveTab('health_breakdown')}
             className={`px-3 py-1.5 rounded-lg transition-colors ${
               activeTab === 'health_breakdown'
-                ? 'bg-slate-800 text-white font-bold border border-slate-700'
+                ? 'bg-slate-800 text-white font-bold border border-slate-700 shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -199,7 +197,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
       {/* Top 4 Executive KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1: Explainable Network Health Score */}
-        <div className="bg-[#0d121f] border border-[#1f293d] rounded-xl p-4 flex flex-col justify-between shadow-lg">
+        <div className="bg-[#0b0e18] border border-slate-800/90 rounded-xl p-4 flex flex-col justify-between shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
               Composite Health Score
@@ -211,7 +209,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
               {overallScore.toFixed(1)}
             </span>
             <span className="text-xs text-slate-400">/ 100</span>
-            <span className={`ml-auto px-2 py-0.5 rounded text-[10px] font-bold ${overallScore >= 80 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+            <span className={`ml-auto px-2 py-0.5 rounded text-[10px] font-bold ${overallScore >= 80 ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'}`}>
               {healthReport?.status || 'DEGRADED'}
             </span>
           </div>
@@ -227,7 +225,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
         </div>
 
         {/* KPI 2: Cross-Incident Correlated Clusters */}
-        <div className="bg-[#0d121f] border border-[#1f293d] rounded-xl p-4 flex flex-col justify-between shadow-lg">
+        <div className="bg-[#0b0e18] border border-slate-800/90 rounded-xl p-4 flex flex-col justify-between shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
               Correlated Fault Clusters
@@ -239,7 +237,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
               {clustersList.length}
             </span>
             <span className="text-xs text-slate-400">active cluster(s)</span>
-            <span className="ml-auto px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+            <span className="ml-auto px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
               TOPOLOGICAL MATCH
             </span>
           </div>
@@ -253,7 +251,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
         </div>
 
         {/* KPI 3: Proactive Risks Detected */}
-        <div className="bg-[#0d121f] border border-[#1f293d] rounded-xl p-4 flex flex-col justify-between shadow-lg">
+        <div className="bg-[#0b0e18] border border-slate-800/90 rounded-xl p-4 flex flex-col justify-between shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
               Proactive Drift Warnings
@@ -265,7 +263,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
               {warningsList.length}
             </span>
             <span className="text-xs text-slate-400">impending breaches</span>
-            <span className="ml-auto px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            <span className="ml-auto px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
               PRE-THRESHOLD
             </span>
           </div>
@@ -280,7 +278,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
         </div>
 
         {/* KPI 4: Swarm Consensus & Bounded Trace */}
-        <div className="bg-[#0d121f] border border-[#1f293d] rounded-xl p-4 flex flex-col justify-between shadow-lg">
+        <div className="bg-[#0b0e18] border border-slate-800/90 rounded-xl p-4 flex flex-col justify-between shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
               Agent Swarm Convergence
@@ -292,7 +290,7 @@ export default function CommandCenterView({ onNavigateToReplay }) {
               5 / 5
             </span>
             <span className="text-xs text-slate-400">agents aligned</span>
-            <span className="ml-auto px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+            <span className="ml-auto px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
               CONSENSUS
             </span>
           </div>
