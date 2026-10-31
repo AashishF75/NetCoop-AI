@@ -10,6 +10,7 @@ import httpx
 from typing import List, Dict, Any, Optional
 
 from collector.schema import TelemetryRecord
+from collector.config import detect_default_gateway
 
 
 class CollectorBackendClient:
@@ -34,6 +35,8 @@ class CollectorBackendClient:
         except Exception:
             pass
 
+        gateway_ip = detect_default_gateway()
+
         payload = {
             "collector_id": collector_id,
             "enrollment_token": enrollment_token,
@@ -41,6 +44,7 @@ class CollectorBackendClient:
             "local_ip": local_ip,
             "os_type": f"{platform.system()} {platform.release()}",
             "collector_version": "1.0.0",
+            "default_gateway": gateway_ip,
         }
 
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -52,16 +56,57 @@ class CollectorBackendClient:
 
     async def heartbeat(self, collector_id: str, session_token: str, active_devices: int = 0) -> bool:
         """
-        Pushes periodic keepalive heartbeat.
+        Pushes periodic keepalive heartbeat with dynamically detected default gateway.
         """
+        gateway_ip = detect_default_gateway()
         payload = {
             "collector_id": collector_id,
             "session_token": session_token,
             "active_device_count": active_devices,
+            "default_gateway": gateway_ip,
         }
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(f"{self.backend_url}/api/collectors/heartbeat", json=payload)
             return resp.status_code == 200
+
+    async def fetch_pending_probe_jobs(self, collector_id: str, session_token: str) -> List[Dict[str, Any]]:
+        """
+        Polls backend for on-demand IP probe jobs dispatched to this collector.
+        """
+        try:
+            headers = {"x-session-token": session_token}
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(
+                    f"{self.backend_url}/api/collectors/{collector_id}/probe-jobs",
+                    headers=headers,
+                )
+                if resp.status_code == 200:
+                    return resp.json()
+        except Exception:
+            pass
+        return []
+
+    async def push_probe_job_result(
+        self,
+        collector_id: str,
+        session_token: str,
+        job_id: str,
+        result_payload: Dict[str, Any],
+    ) -> bool:
+        """
+        Submits the executed on-demand probe result back to the cloud backend.
+        """
+        try:
+            headers = {"x-session-token": session_token}
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.post(
+                    f"{self.backend_url}/api/collectors/{collector_id}/probe-jobs/{job_id}/result",
+                    headers=headers,
+                    json=result_payload,
+                )
+                return resp.status_code == 200
+        except Exception:
+            return False
 
     async def push_telemetry(
         self,

@@ -16,6 +16,48 @@ from pydantic import BaseModel, Field, field_validator
 CONFIG_FILE = Path("collector_config.json")
 
 
+def detect_default_gateway() -> Optional[str]:
+    """
+    Dynamically discovers the local network default gateway IP.
+    Returns None if undetected or unreachable.
+    """
+    import sys
+    import subprocess
+    import socket
+
+    if sys.platform == "win32":
+        try:
+            out = subprocess.check_output(["route", "print", "0.0.0.0"], text=True, timeout=2.0)
+            for line in out.splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 5 and parts[0] == "0.0.0.0" and parts[1] == "0.0.0.0":
+                    gw = parts[2]
+                    if gw and not gw.startswith("0.") and not gw.startswith("127."):
+                        return gw
+        except Exception:
+            pass
+    elif sys.platform.startswith("linux") or sys.platform == "darwin":
+        try:
+            out = subprocess.check_output(["ip", "route"], text=True, timeout=2.0)
+            for line in out.splitlines():
+                if line.startswith("default via"):
+                    return line.split()[2]
+        except Exception:
+            pass
+
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+        parts = local_ip.split(".")
+        if len(parts) == 4 and parts[0] in ("10", "192", "172"):
+            return f"{parts[0]}.{parts[1]}.{parts[2]}.1"
+    except Exception:
+        pass
+    return None
+
+
 def validate_target_host(v: str) -> str:
     """
     Validates target host. Prevents CIDR subnet notations, IP ranges,
@@ -97,6 +139,7 @@ class CollectorSettings(BaseModel):
     session_token: Optional[str] = None
     heartbeat_interval_sec: int = 15
     syslog_port: int = 5140
+    default_gateway: Optional[str] = None
     devices: List[LocalDeviceConfig] = Field(default_factory=list)
 
 

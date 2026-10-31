@@ -8,6 +8,7 @@ import os
 import json
 import uuid
 import secrets
+import asyncio
 from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -62,6 +63,7 @@ class CollectorModel(BaseModel):
     status: CollectorStatus = CollectorStatus.PENDING_PAIRING
     hostname: Optional[str] = None
     local_ip: Optional[str] = None
+    default_gateway: Optional[str] = None
     os_type: Optional[str] = None
     collector_version: str = "1.0.0"
     last_heartbeat_at: Optional[str] = None
@@ -83,6 +85,7 @@ class CollectorRegisterRequest(BaseModel):
     enrollment_token: str
     hostname: str
     local_ip: str
+    default_gateway: Optional[str] = None
     os_type: str
     collector_version: str = "1.0.0"
 
@@ -91,6 +94,7 @@ class CollectorHeartbeatRequest(BaseModel):
     collector_id: str
     session_token: str
     active_device_count: int = 0
+    default_gateway: Optional[str] = None
 
 
 class TelemetryPushRequest(BaseModel):
@@ -124,6 +128,9 @@ class CollectorHub:
         self._collectors: Dict[str, CollectorModel] = {}
         self._devices: Dict[str, RegisteredDeviceModel] = {}
         self._telemetry_cache: Dict[str, List[TelemetryRecord]] = {}
+        self._pending_probe_jobs: Dict[str, List[Dict[str, Any]]] = {}
+        self._completed_probe_jobs: Dict[str, Dict[str, Any]] = {}
+        self._probe_job_events: Dict[str, asyncio.Event] = {}
 
         self._load_state()
 
@@ -216,6 +223,8 @@ class CollectorHub:
         collector.status = CollectorStatus.ONLINE
         collector.hostname = req.hostname
         collector.local_ip = req.local_ip
+        if req.default_gateway:
+            collector.default_gateway = req.default_gateway
         collector.os_type = req.os_type
         collector.collector_version = req.collector_version
         collector.last_heartbeat_at = datetime.now(timezone.utc).isoformat()
@@ -245,10 +254,84 @@ class CollectorHub:
             raise PermissionError("Invalid session token. Re-authentication required.")
 
         collector.status = CollectorStatus.ONLINE
+        if req.default_gateway:
+            collector.default_gateway = req.default_gateway
         collector.last_heartbeat_at = datetime.now(timezone.utc).isoformat()
         self._save_state()
 
         return {"status": "ACK", "server_time": datetime.now(timezone.utc).isoformat()}
+
+    def list_online_collectors(self) -> List[CollectorModel]:
+        """Returns all enrolled collectors that are currently ONLINE."""
+        return [c for c in self.list_collectors() if c.status == CollectorStatus.ONLINE]
+
+    def get_active_default_gateway(self) -> str:
+        """
+        Returns dynamically detected default gateway from the online collector,
+        or dynamically discovers from local network stack.
+        """
+        for c in self.list_online_collectors():
+            if c.default_gateway:
+                return c.default_gateway
+        from collector.config import detect_default_gateway
+        gw = detect_default_gateway()
+        return gw or "127.0.0.1"
+
+    def queue_probe_job(self, collector_id: str, job_data: Dict[str, Any]) -> str:
+        """
+        Queues an on-demand probe job for an online local collector to execute inside LAN.
+        """
+        collector = self._collectors.get(collector_id)
+        if not collector:
+            raise ValueError(f"Unknown collector '{collector_id}'")
+
+        job_id = job_data.get("job_id") or f"job-{uuid.uuid4().hex[:8]}"
+        job_data["job_id"] = job_id
+        job_data["queued_at"] = datetime.now(timezone.utc).isoformat()
+
+        if collector_id not in self._pending_probe_jobs:
+            self._pending_probe_jobs[collector_id] = []
+        self._pending_probe_jobs[collector_id].append(job_data)
+        self._probe_job_events[job_id] = asyncio.Event()
+        return job_id
+
+    def get_pending_probe_jobs(self, collector_id: str, session_token: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves and clears pending probe jobs for an authenticated collector.
+        """
+        collector = self._collectors.get(collector_id)
+        if not collector or collector.session_token != session_token:
+            raise PermissionError("Invalid session token.")
+        jobs = self._pending_probe_jobs.pop(collector_id, [])
+        return jobs
+
+    def submit_probe_job_result(self, collector_id: str, session_token: str, job_id: str, result: Dict[str, Any]) -> bool:
+        """
+        Receives probe execution results from the on-premise collector.
+        """
+        collector = self._collectors.get(collector_id)
+        if not collector or collector.session_token != session_token:
+            raise PermissionError("Invalid session token.")
+        self._completed_probe_jobs[job_id] = result
+        evt = self._probe_job_events.get(job_id)
+        if evt:
+            evt.set()
+        return True
+
+    async def await_probe_job_result(self, job_id: str, timeout_sec: float = 6.0) -> Optional[Dict[str, Any]]:
+        """
+        Awaits completion of a probe job dispatched to a local collector.
+        """
+        evt = self._probe_job_events.get(job_id)
+        if not evt:
+            return self._completed_probe_jobs.get(job_id)
+        try:
+            await asyncio.wait_for(evt.wait(), timeout=timeout_sec)
+            return self._completed_probe_jobs.get(job_id)
+        except asyncio.TimeoutError:
+            return None
+        finally:
+            self._probe_job_events.pop(job_id, None)
 
     def revoke_collector(self, collector_id: str) -> bool:
         """

@@ -49,7 +49,7 @@ class MissingFieldError(ProtocolError):
 
 class TelemetryNormalizer:
     """
-    Standardizes units and validates telemetry records.
+    Standardizes units, resolves incompatible field aliases, and validates telemetry records.
     Canonical standard units:
       - Latency & Jitter: milliseconds (ms)
       - Throughput & Bandwidth: megabits per second (Mbps)
@@ -57,6 +57,84 @@ class TelemetryNormalizer:
       - Wi-Fi RSSI: decibel-milliwatts (dBm)
       - Wi-Fi SNR: decibels (dB)
     """
+
+    # Field aliases mapping non-canonical or vendor-specific telemetry keys to canonical schema
+    FIELD_ALIASES = {
+        "cpu": "cpu_utilization_pct",
+        "cpu_pct": "cpu_utilization_pct",
+        "cpu_util": "cpu_utilization_pct",
+        "cpu_usage": "cpu_utilization_pct",
+        "cpu_utilization": "cpu_utilization_pct",
+        "processor_utilization": "cpu_utilization_pct",
+        "memory": "memory_utilization_pct",
+        "mem": "memory_utilization_pct",
+        "ram": "memory_utilization_pct",
+        "memory_pct": "memory_utilization_pct",
+        "mem_pct": "memory_utilization_pct",
+        "ram_pct": "memory_utilization_pct",
+        "memory_util": "memory_utilization_pct",
+        "loss": "packet_loss_pct",
+        "packet_loss": "packet_loss_pct",
+        "loss_pct": "packet_loss_pct",
+        "latency": "latency_ms",
+        "rtt": "latency_ms",
+        "delay": "latency_ms",
+        "ping_ms": "latency_ms",
+        "round_trip_time_ms": "latency_ms",
+        "jitter": "jitter_ms",
+        "throughput": "throughput_mbps",
+        "bitrate": "throughput_mbps",
+        "bandwidth": "bandwidth_mbps",
+        "link_speed": "bandwidth_mbps",
+        "utilization": "utilization_pct",
+        "link_utilization": "utilization_pct",
+        "link_utilization_pct": "utilization_pct",
+        "queue_drops": "queue_drops_per_sec",
+        "buffer_drops": "queue_drops_per_sec",
+        "crc_errors": "interface_crc_errors",
+        "interface_errors": "interface_crc_errors",
+        "fcs_errors": "interface_crc_errors",
+        "flaps": "interface_flaps",
+        "rssi": "wifi_rssi_dbm",
+        "signal_rssi": "wifi_rssi_dbm",
+        "snr": "wifi_snr_db",
+        "signal_snr": "wifi_snr_db",
+        "retry_pct": "wifi_retry_pct",
+        "retries": "wifi_retry_pct",
+        "dns_latency": "dns_response_ms",
+        "dns_ms": "dns_response_ms",
+        "dhcp_latency": "dhcp_response_ms",
+        "dhcp_ms": "dhcp_response_ms",
+    }
+
+    @staticmethod
+    def extract_numeric_and_unit(val: Any) -> Tuple[Optional[float], Optional[str]]:
+        """
+        Safely extracts float value and optional embedded unit string.
+        Handles values like '45.2 ms', '120 Mbps', '35%', '8.5 dBm', or numeric types.
+        """
+        if val is None or val == "":
+            return None, None
+        if isinstance(val, (int, float)):
+            return float(val), None
+        if isinstance(val, str):
+            s = val.strip()
+            # Try direct float conversion
+            try:
+                return float(s), None
+            except ValueError:
+                pass
+            # Pattern match number + unit suffix
+            import re
+            m = re.match(r"^([-+]?[0-9]*\.?[0-9]+)\s*([a-zA-Z/%]*)$", s)
+            if m:
+                try:
+                    num = float(m.group(1))
+                    unit = m.group(2).strip() or None
+                    return num, unit
+                except ValueError:
+                    pass
+        return None, None
 
     @staticmethod
     def normalize_unit_value(value: Any, unit: Optional[str], metric_name: str) -> Tuple[Optional[float], str]:
@@ -112,38 +190,56 @@ class TelemetryNormalizer:
     def validate_and_normalize_telemetry(cls, raw: Dict[str, Any]) -> TelemetryRecord:
         """
         Parses raw dictionary into a strictly validated TelemetryRecord,
-        checking for required fields, range invariants, and standardizing units.
+        resolves field aliases, checks range invariants, and standardizes units.
         Seamlessly adapts official problem-statement generator payload if present.
         """
-        # Adapt problem-statement structure (nested "metrics")
-        if "metrics" in raw and isinstance(raw["metrics"], dict):
-            flat = dict(raw)
+        flat = dict(raw)
+
+        # 1. Adapt problem-statement structure (nested "metrics")
+        if "metrics" in flat and isinstance(flat["metrics"], dict):
             m = flat.pop("metrics")
             for k, v in m.items():
                 if k not in flat:
                     flat[k] = v
-            if "cpu_utilization" in flat and "cpu_utilization_pct" not in flat:
-                flat["cpu_utilization_pct"] = flat["cpu_utilization"]
             if "status" in flat and "device_status" not in flat:
                 status_map = {"Healthy": "UP", "Warning": "DEGRADED", "Critical": "DOWN"}
                 flat["device_status"] = status_map.get(flat["status"], "UP")
-            if "link_utilization_pct" in flat and "utilization_pct" not in flat:
-                flat["utilization_pct"] = flat["link_utilization_pct"]
-            if "queue_drops" in flat and "queue_drops_per_sec" not in flat:
-                flat["queue_drops_per_sec"] = float(flat["queue_drops"])
-            if "interface_errors" in flat and "interface_crc_errors" not in flat:
-                flat["interface_crc_errors"] = int(flat["interface_errors"])
             if "telemetry_origin" not in flat:
                 flat["telemetry_origin"] = "GENERATED_TEST"
-            raw = flat
+
+        # 2. Resolve field aliases
+        normalized_data: Dict[str, Any] = {}
+        for k, v in flat.items():
+            canonical_key = cls.FIELD_ALIASES.get(k.strip().lower(), k.strip())
+            # If not yet set or current value is None, assign
+            if canonical_key not in normalized_data or normalized_data[canonical_key] is None:
+                normalized_data[canonical_key] = v
+
+        # 3. String numeric parsing and unit normalization for standard metrics
+        numeric_metric_keys = [
+            "latency_ms", "jitter_ms", "packet_loss_pct", "throughput_mbps", "bandwidth_mbps",
+            "utilization_pct", "queue_drops_per_sec", "cpu_utilization_pct", "memory_utilization_pct",
+            "wifi_rssi_dbm", "wifi_snr_db", "wifi_retry_pct", "dns_response_ms", "dhcp_response_ms",
+        ]
+        for key in numeric_metric_keys:
+            if key in normalized_data and normalized_data[key] is not None:
+                val = normalized_data[key]
+                num_val, embedded_unit = cls.extract_numeric_and_unit(val)
+                if num_val is not None:
+                    # Normalize unit if specified
+                    if embedded_unit:
+                        norm_val, _ = cls.normalize_unit_value(num_val, embedded_unit, key)
+                        normalized_data[key] = norm_val
+                    else:
+                        normalized_data[key] = num_val
 
         errors: List[str] = []
 
-        if not raw.get("device_id"):
+        if not normalized_data.get("device_id"):
             errors.append("device_id is required and cannot be empty")
 
         # Range checks for physical realism
-        lat = raw.get("latency_ms")
+        lat = normalized_data.get("latency_ms")
         if lat is not None:
             try:
                 lat_f = float(lat)
@@ -152,7 +248,7 @@ class TelemetryNormalizer:
             except (ValueError, TypeError):
                 errors.append(f"Invalid latency_ms value '{lat}'")
 
-        loss = raw.get("packet_loss_pct")
+        loss = normalized_data.get("packet_loss_pct")
         if loss is not None:
             try:
                 loss_f = float(loss)
@@ -161,7 +257,7 @@ class TelemetryNormalizer:
             except (ValueError, TypeError):
                 errors.append(f"Invalid packet_loss_pct value '{loss}'")
 
-        cpu = raw.get("cpu_utilization_pct")
+        cpu = normalized_data.get("cpu_utilization_pct")
         if cpu is not None:
             try:
                 cpu_f = float(cpu)
@@ -174,7 +270,7 @@ class TelemetryNormalizer:
             raise MalformedDataError(errors)
 
         try:
-            return TelemetryRecord(**raw)
+            return TelemetryRecord(**normalized_data)
         except ValidationError as e:
             err_msgs = [f"{err['loc']}: {err['msg']}" for err in e.errors()]
             raise MalformedDataError(err_msgs)

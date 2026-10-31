@@ -13,20 +13,28 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend")))
 
 import requests
-from collector.config import CollectorSettings, LocalDeviceConfig, DeviceProtocol, save_collector_config
+from collector.config import (
+    CollectorSettings,
+    LocalDeviceConfig,
+    DeviceProtocol,
+    save_collector_config,
+    detect_default_gateway,
+)
 from collector.agent import NetworkCollectorAgent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("LiveCollectorRunner")
 
 BACKEND_URL = "http://127.0.0.1:8000"
-GATEWAY_IP = "10.244.241.91"
+DETECTED_GW = detect_default_gateway() or "10.244.241.91"
+GATEWAY_IP = os.environ.get("GATEWAY_IP", DETECTED_GW)
 
 async def main():
+    logger.info("Dynamically resolved default gateway: %s", GATEWAY_IP)
     hostname = socket.gethostname()
     host_dev_id = f"HOST-{hostname[:12].upper()}"
-    gw_ping_id = "GATEWAY-HOTSPOT-PING"
-    gw_tcp_id = "GATEWAY-HOTSPOT-TCP80"
+    gw_ping_id = f"GATEWAY-PING-{GATEWAY_IP.replace('.', '-')}"
+    gw_tcp_id = f"GATEWAY-TCP80-{GATEWAY_IP.replace('.', '-')}"
 
     # Enroll
     enroll_resp = requests.post(
@@ -51,7 +59,7 @@ async def main():
         },
         {
             "device_id": gw_ping_id,
-            "name": f"Phone Hotspot Gateway Ping ({GATEWAY_IP})",
+            "name": f"Default Gateway Ping ({GATEWAY_IP})",
             "device_type": "router",
             "ip": GATEWAY_IP,
             "port": 0,
@@ -59,7 +67,7 @@ async def main():
         },
         {
             "device_id": gw_tcp_id,
-            "name": f"Phone Hotspot Gateway TCP80 ({GATEWAY_IP}:80)",
+            "name": f"Default Gateway TCP80 ({GATEWAY_IP}:80)",
             "device_type": "router",
             "ip": GATEWAY_IP,
             "port": 80,
@@ -79,6 +87,7 @@ async def main():
         collector_name="Live-Edge-Collector",
         enrollment_token=token,
         heartbeat_interval_sec=10,
+        default_gateway=GATEWAY_IP,
         devices=[
             LocalDeviceConfig(
                 device_id=host_dev_id,
@@ -91,7 +100,7 @@ async def main():
             ),
             LocalDeviceConfig(
                 device_id=gw_ping_id,
-                name=f"Phone Hotspot Gateway Ping ({GATEWAY_IP})",
+                name=f"Default Gateway Ping ({GATEWAY_IP})",
                 device_type="router",
                 host=GATEWAY_IP,
                 port=0,
@@ -100,7 +109,7 @@ async def main():
             ),
             LocalDeviceConfig(
                 device_id=gw_tcp_id,
-                name=f"Phone Hotspot Gateway TCP80 ({GATEWAY_IP}:80)",
+                name=f"Default Gateway TCP80 ({GATEWAY_IP}:80)",
                 device_type="router",
                 host=GATEWAY_IP,
                 port=80,

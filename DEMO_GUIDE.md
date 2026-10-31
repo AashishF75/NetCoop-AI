@@ -209,3 +209,51 @@ All tests and automated verification were executed autonomously in this workspac
   - Strict CIDR subnet scanning rejection (`validate_target_host`)
   - Credential write-only isolation (passwords/API keys redacted in public REST models)
   - Human-in-the-loop remediation safety (no automated hardware write commands)
+
+
+---
+
+## 6. Grand Finale Requirement Audit & Acceptance Proof
+
+### 6.1 On-Demand IP Device Check & Swarm Diagnosis Workflow
+1. Navigate to **Live Network Integrations** domain.
+2. Select the **On-Demand IP Check & Swarm Diagnosis** sub-view.
+3. Enter or select any LAN target IP (e.g. Default Gateway `10.244.241.91`, Local Host `127.0.0.1`, Google DNS `8.8.8.8`).
+4. Select the interrogation protocol:
+   - **ICMP Echo Ping**: Direct OS socket echo probe. Measures real reachability and RTT latency (~5 ms on phone hotspot).
+   - **TCP Port 3-Way Handshake**: Tests port 80/443 handshake latency.
+   - **Local Host OS Kernel**: Collects genuine CPU/memory metrics from host OS kernel (`GlobalMemoryStatusEx` and `GetSystemTimes`).
+   - **SNMP / RESTCONF**: Enforces strict credential boundaries without assuming or fabricating router internals.
+5. Click **Execute IP Probe & Swarm Diagnosis**.
+6. Inspect the live findings:
+   - **Supported Metrics**: `latency_ms`, `packet_loss_pct`, `device_status`.
+   - **Unsupported Metrics**: Explicitly lists router CPU, memory, Wi-Fi RSSI as unsupported via ICMP without credentials to avoid false claims.
+   - **5-Agent Swarm Consensus**: Evaluated autonomously by Metric, Infrastructure, Connectivity, Fault Correlation, and Recommendation agents.
+   - **One-Click Replay**: Click **Open in Investigation Replay** to review the complete multi-agent timeline.
+
+### 6.2 Robust Telemetry Interoperability
+The platform handles heterogeneous telemetry formats via `TelemetryNormalizer`:
+- **Field Name Aliases**: Resolves `cpu`, `cpu_util`, `loss`, `delay`, `rtt`, `crc_errors`, `queue_drops`, `rssi`, `memory_pct` to canonical names.
+- **Embedded Units**: Extracts floats and units from strings (e.g. `"45.2 ms"` -> `45.2`, `"120 Mbps"` -> `120.0`, `"35%"` -> `35.0`).
+- **Nested Payloads**: Automatically flattens `"metrics": { ... }` dictionaries from vendor or benchmark generators.
+
+### 6.3 Confidence Scoring Heuristic
+Confidence is computed using an evidential heuristic combining:
+- **Bayesian Anomaly Severity Weights**: Cumulative weighted severity across latency, loss, CRC errors, and queues.
+- **Cross-Agent Agreement Ratio**: Corroboration between performance, infrastructure, and connectivity agents.
+- **Evidential Penalties**: Explicit penalties for missing telemetry dimensions and unverified hypotheses.
+
+### 6.4 Automated Verification Commands
+```powershell
+# Run the 15 comprehensive audit acceptance tests
+$env:PYTHONPATH=".;backend"; pytest backend/tests/test_audit_requirements.py -v
+
+# Run the complete 101-test backend test suite
+$env:PYTHONPATH=".;backend"; pytest backend/tests -v
+
+# Verify frontend production build
+npm run build --prefix frontend
+
+# Run Playwright E2E browser automation for IP probe workflow
+python scripts/verify_ip_probe_browser.py
+```

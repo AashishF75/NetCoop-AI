@@ -762,6 +762,36 @@ def ingest_syslog_messages(req: SyslogIngestRequest):
     return {"success": True, "ingested_messages": count}
 
 
+class DeviceProbeRequest(BaseModel):
+    ip: str = Field(..., description="Target IPv4 or hostname to probe")
+    protocol: str = Field(default="PING", description="PING, TCP_PROBE, HOST_METRICS, SNMP, RESTCONF")
+    port: Optional[int] = Field(default=80, description="TCP port if TCP_PROBE")
+    device_id: Optional[str] = Field(default=None, description="Identifier for target device")
+
+
+@app.post("/api/integrations/probe-ip")
+async def probe_device_ip_and_diagnose(req: DeviceProbeRequest):
+    """
+    On-demand point-to-point IP device probe & multi-agent fault diagnosis.
+    Gathers only supported metrics (ICMP ping RTT, TCP handshake, or host kernel metrics),
+    avoids fabricating router internals, and feeds telemetry into the 5-agent diagnosis engine.
+    """
+    from app.integrations.probe_service import probe_ip_and_diagnose
+    try:
+        res = await probe_ip_and_diagnose(
+            ip=req.ip,
+            protocol=req.protocol,
+            port=req.port or 80,
+            device_id=req.device_id,
+            orchestrator=orchestrator,
+        )
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Device probe failed: {str(e)}")
+
+
 # =====================================================================
 # COLLECTOR AGENT & ON-PREMISE INGESTION ENDPOINTS
 # =====================================================================
@@ -856,9 +886,46 @@ def get_collector_inventory():
         "collectors_count": len(collectors),
         "online_collectors_count": len([c for c in collectors if c.status == "ONLINE"]),
         "devices_count": len(devices),
+        "default_gateway": hub.get_active_default_gateway(),
         "collectors": [c.model_dump() for c in collectors],
         "devices": [d.model_dump() for d in devices],
     }
+
+
+@app.get("/api/collectors/detected-gateway")
+def get_detected_default_gateway():
+    """
+    Returns the dynamically discovered default gateway reported by the active collector.
+    """
+    hub = get_collector_hub()
+    return {"default_gateway": hub.get_active_default_gateway()}
+
+
+@app.get("/api/collectors/{collector_id}/probe-jobs")
+def get_collector_probe_jobs(collector_id: str, request: Request):
+    """
+    Poll endpoint called by on-premise collector to fetch pending on-demand probe jobs.
+    """
+    session_token = request.headers.get("x-session-token") or ""
+    hub = get_collector_hub()
+    try:
+        return hub.get_pending_probe_jobs(collector_id, session_token)
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+@app.post("/api/collectors/{collector_id}/probe-jobs/{job_id}/result")
+def submit_collector_probe_job_result(collector_id: str, job_id: str, result: Dict[str, Any], request: Request):
+    """
+    Receives executed probe result back from the on-premise collector.
+    """
+    session_token = request.headers.get("x-session-token") or ""
+    hub = get_collector_hub()
+    try:
+        hub.submit_probe_job_result(collector_id, session_token, job_id, result)
+        return {"success": True, "job_id": job_id}
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
 
 
 @app.get("/api/collectors/{collector_id}/devices")

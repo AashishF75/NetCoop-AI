@@ -253,6 +253,19 @@ export async function diagnoseLiveNetwork(payload = {}) {
   return res.json();
 }
 
+export async function probeDeviceIp(payload) {
+  const res = await fetch(`${API_BASE}/integrations/probe-ip`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || 'IP probe failed');
+  }
+  return res.json();
+}
+
 export async function ingestSyslog(payload) {
   const res = await fetch(`${API_BASE}/integrations/syslog/ingest`, {
     method: 'POST',

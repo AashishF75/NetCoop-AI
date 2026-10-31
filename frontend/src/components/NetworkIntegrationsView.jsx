@@ -14,11 +14,21 @@ import {
   fetchCollectorInventory,
   registerCollectorDevice,
   deleteCollectorDevice,
+  probeDeviceIp,
 } from '../api/client';
 
 export default function NetworkIntegrationsView({ onSelectLiveInvestigation, currentTelemetryOrigin }) {
-  // Navigation sub-view: 'collectors' | 'direct_probes'
-  const [subView, setSubView] = useState('collectors');
+  // Navigation sub-view: 'ip_check' | 'collectors' | 'direct_probes'
+  const [subView, setSubView] = useState('ip_check');
+
+  // On-Demand IP Device Check State
+  const [detectedGateway, setDetectedGateway] = useState('10.10.214.1');
+  const [probeIp, setProbeIp] = useState('10.10.214.1');
+  const [probeProtocol, setProbeProtocol] = useState('PING');
+  const [probePort, setProbePort] = useState(80);
+  const [probingDevice, setProbingDevice] = useState(false);
+  const [probeResult, setProbeResult] = useState(null);
+  const [probeError, setProbeError] = useState(null);
 
   // Direct Sources State
   const [sources, setSources] = useState([]);
@@ -110,6 +120,10 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
       const data = await fetchCollectorInventory();
       setCollectors(data.collectors || []);
       setDevices(data.devices || []);
+      if (data.default_gateway) {
+        setDetectedGateway(data.default_gateway);
+        setProbeIp((prev) => (prev === '10.244.241.91' || prev === '10.10.214.1' || !prev ? data.default_gateway : prev));
+      }
     } catch (err) {
       console.warn('Failed to load collector inventory:', err);
     }
@@ -279,6 +293,30 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
       setDiagnosingLive(false);
     }
   }
+
+  async function handleRunIpProbe(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!probeIp.trim()) {
+      setProbeError('Please enter a target IPv4 address or hostname.');
+      return;
+    }
+    setProbingDevice(true);
+    setProbeError(null);
+    try {
+      const res = await probeDeviceIp({
+        ip: probeIp.trim(),
+        protocol: probeProtocol,
+        port: parseInt(probePort, 10) || 80,
+      });
+      setProbeResult(res);
+      await loadCollectorInventory();
+    } catch (err) {
+      setProbeError(err.message || 'IP device probe failed.');
+    } finally {
+      setProbingDevice(false);
+    }
+  }
+
 
   async function handleIngestSyslog() {
     if (!syslogText.trim()) return;
@@ -474,7 +512,19 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
       )}
 
       {/* Sub-View Navigation Switcher */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
+        <button
+          onClick={() => setSubView('ip_check')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition ${
+            subView === 'ip_check'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+          }`}
+        >
+          <span>🎯</span>
+          <span>On-Demand IP Check & Swarm Diagnosis</span>
+        </button>
+
         <button
           onClick={() => setSubView('collectors')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition ${
@@ -499,6 +549,384 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
           <span>Direct Host Probes & Templates ({sources.length})</span>
         </button>
       </div>
+
+      {/* ============================================================== */}
+      {/* SUB-VIEW 0: ON-DEMAND IP DEVICE CHECK & SWARM DIAGNOSIS         */}
+      {/* ============================================================== */}
+      {subView === 'ip_check' && (
+        <div className="space-y-6">
+          {/* Target IP Configuration Card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-5">
+            <div>
+              <div className="flex items-center gap-2 text-white font-bold text-base">
+                <span>🎯</span>
+                <h3>Target IP Device Interrogation & 5-Agent Swarm Diagnosis</h3>
+              </div>
+              <p className="text-slate-400 text-xs mt-1">
+                Point-to-point interrogation for arbitrary LAN/WAN IP targets without requiring inbound port forwarding.
+                Only genuinely supported telemetry is collected; router internal metrics are never fabricated.
+              </p>
+            </div>
+
+            <form onSubmit={handleRunIpProbe} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Target IP */}
+                <div className="md:col-span-1 space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-300">Target IPv4 Address / Host</label>
+                  <input
+                    type="text"
+                    value={probeIp}
+                    onChange={(e) => setProbeIp(e.target.value)}
+                    placeholder="e.g. 10.244.241.91 or 127.0.0.1"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-indigo-500"
+                    required
+                  />
+                  {/* IP Presets */}
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {detectedGateway && (
+                      <button
+                        type="button"
+                        onClick={() => setProbeIp(detectedGateway)}
+                        className="text-[10px] bg-indigo-950/80 hover:bg-indigo-900/90 text-indigo-300 border border-indigo-700/50 px-2 py-0.5 rounded transition font-mono"
+                      >
+                        Default Gateway: {detectedGateway}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setProbeIp('127.0.0.1')}
+                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition font-mono"
+                    >
+                      Localhost: 127.0.0.1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProbeIp('8.8.8.8')}
+                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition font-mono"
+                    >
+                      Google DNS: 8.8.8.8
+                    </button>
+                  </div>
+                </div>
+
+                {/* Protocol Selection */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-300">Interrogation Protocol</label>
+                  <select
+                    value={probeProtocol}
+                    onChange={(e) => setProbeProtocol(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="PING">ICMP Echo Ping (Reachability & RTT)</option>
+                    <option value="TCP_PROBE">TCP Port 3-Way Handshake Connect</option>
+                    <option value="HOST_METRICS">Local Host OS Kernel (Genuine CPU/RAM/Interface)</option>
+                    <option value="SNMP" disabled>Physical Router SNMP v2c/v3 (Planned — Credentials Required)</option>
+                    <option value="RESTCONF" disabled>Physical Router RESTCONF/YANG (Planned — Credentials Required)</option>
+                  </select>
+                  <p className="text-[11px] text-slate-500">
+                    {probeProtocol === 'PING' && 'Direct ICMP echo probe from OS network stack. Captures latency and packet loss.'}
+                    {probeProtocol === 'TCP_PROBE' && 'Full 3-way TCP socket handshake. Validates port reachability.'}
+                    {probeProtocol === 'HOST_METRICS' && 'Reads genuine Windows kernel metrics via GetSystemTimes & GlobalMemoryStatusEx.'}
+                    {probeProtocol === 'SNMP' && 'Planned capability: Requires authorized SNMP community string on physical router.'}
+                    {probeProtocol === 'RESTCONF' && 'Planned capability: Requires TLS RESTCONF credentials on physical router.'}
+                  </p>
+                </div>
+
+                {/* Port (if TCP) */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-300">Target Port (for TCP probe)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="65535"
+                    disabled={probeProtocol !== 'TCP_PROBE'}
+                    value={probePort}
+                    onChange={(e) => setProbePort(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 disabled:opacity-40 rounded-lg px-3.5 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-indigo-500"
+                  />
+                  <div className="flex gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      disabled={probeProtocol !== 'TCP_PROBE'}
+                      onClick={() => setProbePort(80)}
+                      className="text-[10px] bg-slate-800 disabled:opacity-40 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition"
+                    >
+                      Port 80 (HTTP)
+                    </button>
+                    <button
+                      type="button"
+                      disabled={probeProtocol !== 'TCP_PROBE'}
+                      onClick={() => setProbePort(443)}
+                      className="text-[10px] bg-slate-800 disabled:opacity-40 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition"
+                    >
+                      Port 443 (HTTPS)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Protocol Fidelity Notice */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 text-xs text-slate-300 flex items-start gap-2.5">
+                <span className="text-amber-400 mt-0.5">ℹ️</span>
+                <div>
+                  <span className="font-semibold text-slate-200">Anti-Fabrication & Protocol Fidelity Policy:</span>
+                  <p className="text-slate-400 mt-0.5 text-[11px] leading-relaxed">
+                    ICMP and TCP probes strictly test network reachability and latency. Device internal metrics (CPU, RAM, Wi-Fi RSSI, optical transceivers) are unsupported without authenticated device access and are <strong>explicitly marked as unsupported</strong> to prevent false claims.
+                  </p>
+                </div>
+              </div>
+
+              {/* Trigger Button */}
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={probingDevice}
+                  className={`px-5 py-2.5 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-lg ${
+                    probingDevice
+                      ? 'bg-indigo-800 text-white cursor-wait opacity-80'
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-950/50'
+                  }`}
+                >
+                  {probingDevice ? (
+                    <>
+                      <svg className="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                      <span>Probing IP & Running 5-Agent Swarm...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>🚀</span>
+                      <span>Execute IP Probe & Swarm Diagnosis</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+
+            {probeError && (
+              <div className="bg-rose-950/40 border border-rose-600/50 text-rose-200 p-3 rounded-lg text-xs font-mono">
+                Error: {probeError}
+              </div>
+            )}
+          </div>
+
+          {/* Probe & Multi-Agent Diagnosis Results */}
+          {probeResult && (
+            <div className="space-y-4">
+              {/* Probe Telemetry Findings Card */}
+              <div className="bg-slate-900 border border-indigo-500/40 rounded-xl p-5 shadow-2xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className={`h-3 w-3 rounded-full ${
+                        probeResult.probe_result.status === 'UP'
+                          ? 'bg-emerald-400'
+                          : probeResult.probe_result.status === 'DEGRADED'
+                          ? 'bg-amber-400'
+                          : 'bg-rose-500'
+                      }`}
+                    ></span>
+                    <h3 className="text-sm font-bold text-white font-mono">
+                      {probeResult.probe_result.ip} ({probeResult.probe_result.protocol})
+                    </h3>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        probeResult.probe_result.status === 'UP'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : probeResult.probe_result.status === 'DEGRADED'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                      }`}
+                    >
+                      {probeResult.probe_result.status}
+                    </span>
+                    <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 px-2 py-0.5 text-[10px] font-bold rounded">
+                      {probeResult.probe_result.telemetry_origin === 'LIVE_DEVICE'
+                        ? '🟢 LIVE_DEVICE PROBE'
+                        : '🟢 LIVE_HOST TELEMETRY'}
+                    </span>
+                    {probeResult.routed_via_collector && (
+                      <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-mono rounded">
+                        📡 Routed Via: {probeResult.routed_via_collector}
+                      </span>
+                    )}
+                  </div>
+
+                  {onSelectLiveInvestigation && probeResult.diagnosis?.incident_id && (
+                    <button
+                      onClick={() => onSelectLiveInvestigation(probeResult.diagnosis.incident_id)}
+                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-bold transition flex items-center gap-1.5 shadow"
+                    >
+                      <span>🔍</span> Open in Investigation Replay
+                    </button>
+                  )}
+                </div>
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 text-[11px] block">Latency (RTT)</span>
+                    <span className="text-lg font-bold text-slate-100 font-mono mt-0.5 block">
+                      {probeResult.probe_result.latency_ms !== null && probeResult.probe_result.latency_ms !== undefined
+                        ? `${probeResult.probe_result.latency_ms} ms`
+                        : 'N/A'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 text-[11px] block">Packet Loss</span>
+                    <span className="text-lg font-bold text-slate-100 font-mono mt-0.5 block">
+                      {probeResult.probe_result.packet_loss_pct !== null && probeResult.probe_result.packet_loss_pct !== undefined
+                        ? `${probeResult.probe_result.packet_loss_pct}%`
+                        : 'N/A'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 text-[11px] block">Device CPU</span>
+                    <span className="text-lg font-bold text-slate-100 font-mono mt-0.5 block">
+                      {probeResult.probe_result.cpu_utilization_pct !== null && probeResult.probe_result.cpu_utilization_pct !== undefined
+                        ? `${probeResult.probe_result.cpu_utilization_pct}%`
+                        : <span className="text-slate-500 text-xs font-normal">Not Exposed</span>}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 text-[11px] block">Device Memory</span>
+                    <span className="text-lg font-bold text-slate-100 font-mono mt-0.5 block">
+                      {probeResult.probe_result.memory_utilization_pct !== null && probeResult.probe_result.memory_utilization_pct !== undefined
+                        ? `${probeResult.probe_result.memory_utilization_pct}%`
+                        : <span className="text-slate-500 text-xs font-normal">Not Exposed</span>}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Probe Technical Note */}
+                <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-xs text-slate-300">
+                  <span className="text-indigo-400 font-semibold">Probe Note: </span>
+                  {probeResult.probe_result.probe_note}
+                </div>
+
+                {/* Metric Exposure Transparency: Supported vs Unsupported */}
+                <div className="space-y-2 pt-1 border-t border-slate-800">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-semibold text-slate-400 mr-1">Supported Metrics:</span>
+                    {probeResult.probe_result.supported_metrics?.map((m) => (
+                      <span key={m} className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 font-mono">
+                        ✓ {m}
+                      </span>
+                    ))}
+                  </div>
+
+                  {probeResult.probe_result.unsupported_metrics && probeResult.probe_result.unsupported_metrics.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-semibold text-slate-500 mr-1">Unsupported Metrics:</span>
+                      {probeResult.probe_result.unsupported_metrics.map((m) => (
+                        <span key={m} className="text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-500 border border-slate-800 line-through">
+                          {m}
+                        </span>
+                      ))}
+                      <span className="text-[10px] text-slate-500 italic">(requires authenticated device credentials)</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 5-Agent Swarm Consensus Panel */}
+              {probeResult.diagnosis?.canonical_report && (
+                <div className="bg-[#0b0e18] border border-slate-800 rounded-xl p-5 shadow-xl space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🤖</span>
+                      <h4 className="text-sm font-bold text-white">5-Agent Swarm Consensus Diagnosis</h4>
+                      <span className="text-xs font-mono text-indigo-400">({probeResult.diagnosis.incident_id})</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">Confidence Score:</span>
+                      <span className="text-sm font-bold text-emerald-400 bg-emerald-950/50 border border-emerald-800/50 px-2 py-0.5 rounded">
+                        {Math.round((probeResult.diagnosis.canonical_report.confidence || 0) * 100)}%
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div className="space-y-1.5">
+                      <span className="text-slate-400 font-semibold">Suspected Root Cause:</span>
+                      <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 font-bold text-slate-100">
+                        {probeResult.diagnosis.canonical_report.suspected_root_cause}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <span className="text-slate-400 font-semibold">Affected Devices:</span>
+                      <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 text-slate-200 font-mono">
+                        {probeResult.diagnosis.canonical_report.affected_devices?.join(', ') || 'None identified'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Supporting Evidence */}
+                  {probeResult.diagnosis.canonical_report.supporting_evidence?.length > 0 && (
+                    <div className="space-y-1.5 text-xs">
+                      <span className="text-slate-400 font-semibold">Supporting Evidence:</span>
+                      <ul className="space-y-1 bg-slate-900 p-3 rounded-lg border border-slate-800 text-slate-300">
+                        {probeResult.diagnosis.canonical_report.supporting_evidence.map((ev, i) => {
+                          const text = typeof ev === 'string' ? ev : (ev.summary || `[${ev.agent_id || 'Agent'}] ${ev.metric || 'Metric'}: observed ${ev.observed_value} vs baseline ${ev.baseline_value} (${ev.severity || 'ANOMALY'})`);
+                          return (
+                            <li key={i} className="flex items-start gap-1.5">
+                              <span className="text-indigo-400 mt-0.5">•</span>
+                              <span>{text}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Explicit Limitations */}
+                  {probeResult.diagnosis.canonical_report.limitations?.length > 0 && (
+                    <div className="space-y-1.5 text-xs">
+                      <span className="text-slate-400 font-semibold">Explicit Limitations & Constraints:</span>
+                      <ul className="space-y-1 bg-slate-950 p-3 rounded-lg border border-amber-900/30 text-amber-200/80">
+                        {probeResult.diagnosis.canonical_report.limitations.map((lim, i) => {
+                          const text = typeof lim === 'string' ? lim : (lim.description || lim.note || JSON.stringify(lim));
+                          return (
+                            <li key={i} className="flex items-start gap-1.5">
+                              <span className="text-amber-400 mt-0.5">⚠️</span>
+                              <span>{text}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Recommended Remediation Actions */}
+                  {probeResult.diagnosis.canonical_report.recommended_actions?.length > 0 && (
+                    <div className="space-y-1.5 text-xs">
+                      <span className="text-slate-400 font-semibold">Recommended Remediation Actions:</span>
+                      <ul className="space-y-1 bg-slate-900 p-3 rounded-lg border border-slate-800 text-emerald-300">
+                        {probeResult.diagnosis.canonical_report.recommended_actions.map((act, i) => {
+                          const text = typeof act === 'string' ? act : (act.action || act.description || act.title || JSON.stringify(act));
+                          return (
+                            <li key={i} className="flex items-start gap-1.5">
+                              <span className="text-emerald-400 mt-0.5">✓</span>
+                              <span>{text}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ============================================================== */}
       {/* SUB-VIEW 1: ON-PREMISE COLLECTORS & REAL DEVICE INVENTORY       */}

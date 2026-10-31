@@ -155,6 +155,76 @@ class NetworkCollectorAgent:
 
             await asyncio.sleep(15)
 
+    async def _execute_probe_job(self, job: dict) -> None:
+        """
+        Executes an on-demand probe job dispatched from cloud backend,
+        runs the appropriate local adapter inside LAN, and pushes the result back.
+        """
+        job_id = job.get("job_id")
+        target_ip = job.get("ip")
+        proto_str = str(job.get("protocol", "PING")).upper()
+        port = int(job.get("port") or 80)
+        dev_id = job.get("device_id") or f"PROBE-{target_ip}"
+
+        proto = DeviceProtocol.PING_PROBE if proto_str in ("PING", "ICMP", "PING_PROBE") else (
+            DeviceProtocol.HOST_METRICS if proto_str == "HOST_METRICS" else DeviceProtocol.TCP_PROBE
+        )
+
+        tmp_device = LocalDeviceConfig(
+            device_id=dev_id,
+            name=f"On-Demand Probe ({target_ip})",
+            device_type="server" if proto == DeviceProtocol.HOST_METRICS else "router",
+            host=target_ip,
+            port=0 if proto == DeviceProtocol.PING_PROBE else port,
+            protocol=proto,
+            timeout_sec=2.0,
+        )
+
+        try:
+            if proto == DeviceProtocol.HOST_METRICS:
+                records, avail, unsupp = await poll_host_metrics(tmp_device)
+            else:
+                records, avail, unsupp = await probe_tcp_reachability(tmp_device)
+
+            if records and self.settings.collector_id and self.settings.session_token:
+                rec_dict = records[0].model_dump()
+                await self.client.push_probe_job_result(
+                    collector_id=self.settings.collector_id,
+                    session_token=self.settings.session_token,
+                    job_id=job_id,
+                    result_payload={
+                        "job_id": job_id,
+                        "device_id": dev_id,
+                        "ip": target_ip,
+                        "protocol": proto_str,
+                        "port": port,
+                        "status": rec_dict.get("device_status", "UP"),
+                        "record": rec_dict,
+                        "metrics_available": avail,
+                        "metrics_unsupported": unsupp,
+                        "collector_id": self.settings.collector_id,
+                    },
+                )
+        except Exception as e:
+            logger.error("Failed to execute on-demand probe job %s: %s", job_id, e)
+
+    async def _probe_dispatch_loop(self) -> None:
+        """
+        Polls cloud backend for on-demand IP probe requests and executes them immediately.
+        Enables 1-second responsiveness for user-initiated IP checks through this local collector.
+        """
+        while self._running:
+            if self.settings.collector_id and self.settings.session_token:
+                try:
+                    jobs = await self.client.fetch_pending_probe_jobs(
+                        self.settings.collector_id, self.settings.session_token
+                    )
+                    for job in jobs:
+                        asyncio.create_task(self._execute_probe_job(job))
+                except Exception as e:
+                    logger.debug("Probe job poll: %s", e)
+            await asyncio.sleep(1)
+
     async def start(self) -> None:
         """
         Starts the collector agent and background tasks.
@@ -177,6 +247,7 @@ class NetworkCollectorAgent:
 
         self._tasks.append(asyncio.create_task(self._heartbeat_loop()))
         self._tasks.append(asyncio.create_task(self._device_polling_loop()))
+        self._tasks.append(asyncio.create_task(self._probe_dispatch_loop()))
         logger.info("NetCoop Collector Agent running with %d target devices.", len(self.settings.devices))
 
     async def stop(self) -> None:
