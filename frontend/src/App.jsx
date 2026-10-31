@@ -19,6 +19,7 @@ import IncidentPrioritizer from './components/IncidentPrioritizer';
 import FaultInjectionStudio from './components/FaultInjectionStudio';
 import CommandCenterView from './components/CommandCenterView';
 import NetworkIntegrationsView from './components/NetworkIntegrationsView';
+import TelemetryGeneratorView from './components/TelemetryGeneratorView';
 
 import {
   fetchTopology,
@@ -357,6 +358,18 @@ export default function App() {
               <span>⚡</span>
               <span>Fault Injection Studio</span>
             </button>
+
+            <button
+              onClick={() => setActiveView('generator')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
+                activeView === 'generator'
+                  ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-bold shadow-md shadow-amber-900/30'
+                  : 'text-amber-400/90 hover:text-amber-300 hover:bg-slate-800/60'
+              }`}
+            >
+              <span>🧪</span>
+              <span>Official Telemetry Benchmark</span>
+            </button>
           </div>
 
           <div className="hidden xl:flex items-center gap-2 text-xs font-mono text-slate-400 pr-2">
@@ -495,6 +508,22 @@ export default function App() {
               setIsPlayingReplay(true);
               setActiveView('ops');
             }}
+          />
+        )}
+
+        {/* VIEW 6: Official Problem-Statement Telemetry Generator */}
+        {activeView === 'generator' && (
+          <TelemetryGeneratorView
+            onSelectInvestigation={(res) => {
+              setDiagnosticResult(res);
+              if (res.telemetry) setTelemetry(res.telemetry);
+              const evts = res.timeline_events || [];
+              setTimelineEvents(evts);
+              setCurrentStepIndex(0);
+              setIsPlayingReplay(true);
+              setActiveView('ops');
+            }}
+            onNavigateToOps={() => setActiveView('ops')}
           />
         )}
 

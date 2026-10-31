@@ -113,7 +113,30 @@ class TelemetryNormalizer:
         """
         Parses raw dictionary into a strictly validated TelemetryRecord,
         checking for required fields, range invariants, and standardizing units.
+        Seamlessly adapts official problem-statement generator payload if present.
         """
+        # Adapt problem-statement structure (nested "metrics")
+        if "metrics" in raw and isinstance(raw["metrics"], dict):
+            flat = dict(raw)
+            m = flat.pop("metrics")
+            for k, v in m.items():
+                if k not in flat:
+                    flat[k] = v
+            if "cpu_utilization" in flat and "cpu_utilization_pct" not in flat:
+                flat["cpu_utilization_pct"] = flat["cpu_utilization"]
+            if "status" in flat and "device_status" not in flat:
+                status_map = {"Healthy": "UP", "Warning": "DEGRADED", "Critical": "DOWN"}
+                flat["device_status"] = status_map.get(flat["status"], "UP")
+            if "link_utilization_pct" in flat and "utilization_pct" not in flat:
+                flat["utilization_pct"] = flat["link_utilization_pct"]
+            if "queue_drops" in flat and "queue_drops_per_sec" not in flat:
+                flat["queue_drops_per_sec"] = float(flat["queue_drops"])
+            if "interface_errors" in flat and "interface_crc_errors" not in flat:
+                flat["interface_crc_errors"] = int(flat["interface_errors"])
+            if "telemetry_origin" not in flat:
+                flat["telemetry_origin"] = "GENERATED_TEST"
+            raw = flat
+
         errors: List[str] = []
 
         if not raw.get("device_id"):

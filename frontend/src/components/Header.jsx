@@ -63,6 +63,11 @@ export default function Header({
               <span className="w-2 h-2 rounded-full bg-teal-400"></span>
               <span>LIVE HOST PROBE</span>
             </div>
+          ) : telemetryOrigin === 'GENERATED_TEST' ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-300 border border-yellow-500/50 text-xs font-bold shadow-sm shadow-yellow-950/40">
+              <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+              <span>GENERATED TEST DATA</span>
+            </div>
           ) : telemetryOrigin === 'CUSTOM_IMPORT' ? (
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold">
               <span className="w-2 h-2 rounded-full bg-amber-400"></span>

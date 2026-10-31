@@ -305,3 +305,41 @@ export async function deleteCollectorDevice(collectorId, deviceId) {
   if (!res.ok) throw new Error(`Failed to remove device: ${res.statusText}`);
   return res.json();
 }
+
+export async function generateOfficialTelemetry(faultType = 'normal') {
+  const res = await fetch(`${API_BASE}/generator/generate?fault_type=${encodeURIComponent(faultType)}`);
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || 'Failed to generate official telemetry');
+  }
+  return res.json();
+}
+
+export async function validateOfficialTelemetry(payload) {
+  const res = await fetch(`${API_BASE}/generator/validate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || 'Official telemetry validation failed');
+  }
+  return res.json();
+}
+
+export async function diagnoseOfficialTelemetry({ faultType, rawTelemetry }) {
+  const res = await fetch(`${API_BASE}/generator/diagnose`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fault_type: faultType || 'normal',
+      raw_telemetry: rawTelemetry || null,
+    }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || 'Diagnosis on generated telemetry failed');
+  }
+  return res.json();
+}

@@ -433,12 +433,14 @@ class MultiAgentOrchestrator:
         # Proactive Risk Analysis on current telemetry
         proactive_warnings = proactive_predictor.analyze_trends([], current_telemetry=telemetry)
 
-        # Determine overall telemetry origin (LIVE_DEVICE, LIVE_HOST, CUSTOM_IMPORT, or SIMULATED_SCENARIO)
+        # Determine overall telemetry origin (LIVE_DEVICE, LIVE_HOST, GENERATED_TEST, CUSTOM_IMPORT, or SIMULATED_SCENARIO)
         origins = {getattr(rec, "telemetry_origin", "SIMULATED_SCENARIO") for rec in telemetry}
         if "LIVE_DEVICE" in origins:
             detected_origin = "LIVE_DEVICE"
         elif "LIVE_HOST" in origins or "LIVE" in origins:
             detected_origin = "LIVE_HOST"
+        elif "GENERATED_TEST" in origins:
+            detected_origin = "GENERATED_TEST"
         elif "CUSTOM_IMPORT" in origins:
             detected_origin = "CUSTOM_IMPORT"
         else:

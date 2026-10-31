@@ -55,6 +55,12 @@ from app.integrations.collector_hub import (
     TelemetryPushRequest,
     DeviceRegisterRequest,
 )
+from app.generator.telemetry_generator import (
+    generate_telemetry,
+    adapt_to_canonical_record,
+    validate_generated_payload,
+    VALID_FAULT_TYPES,
+)
 
 app = FastAPI(
     title="NetCoop AI — Multi-Agent Network Fault Diagnosis Platform",
@@ -877,4 +883,109 @@ def delete_collector_device(collector_id: str, device_id: str):
     if not hub.delete_device(device_id):
         raise HTTPException(status_code=404, detail=f"Device '{device_id}' not found.")
     return {"success": True, "message": f"Device '{device_id}' removed."}
+
+
+# =====================================================================
+# OFFICIAL PROBLEM-STATEMENT TELEMETRY GENERATOR ENDPOINTS
+# =====================================================================
+
+class OfficialGeneratorDiagnoseRequest(BaseModel):
+    fault_type: str = "normal"
+    raw_telemetry: Optional[Dict[str, Any]] = None
+
+
+@app.get("/api/generator/generate")
+def get_generated_telemetry(fault_type: str = "normal"):
+    """
+    Generates synthetic telemetry using the exact problem-statement generator.
+    Supports: 'normal', 'latency_spike', 'hardware_failure'.
+    Strictly marked with telemetry_origin='GENERATED_TEST'.
+    """
+    clean_type = (fault_type or "normal").strip().lower()
+    if clean_type not in VALID_FAULT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid fault_type '{fault_type}'. Supported: {sorted(list(VALID_FAULT_TYPES))}",
+        )
+    raw_data = generate_telemetry(clean_type)
+    return {
+        "success": True,
+        "fault_type": clean_type,
+        "telemetry_origin": "GENERATED_TEST",
+        "raw_telemetry": raw_data,
+    }
+
+
+@app.post("/api/generator/validate")
+def validate_telemetry_payload(payload: Dict[str, Any]):
+    """
+    Validates a problem-statement telemetry payload against official specifications.
+    """
+    valid, err = validate_generated_payload(payload)
+    if not valid:
+        raise HTTPException(status_code=400, detail=f"Validation failed: {err}")
+    return {"success": True, "valid": True, "message": "Telemetry adheres to official generator schema."}
+
+
+@app.post("/api/generator/diagnose")
+def diagnose_generated_telemetry(req: OfficialGeneratorDiagnoseRequest):
+    """
+    Runs the multi-agent diagnosis pipeline over problem-statement generated telemetry.
+    Strictly tags output with telemetry_origin='GENERATED_TEST' to preserve provenance.
+    Never overwrites real live router telemetry or falls back to synthetic files.
+    """
+    clean_type = (req.fault_type or "normal").strip().lower()
+    if clean_type not in VALID_FAULT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid fault_type '{req.fault_type}'. Supported: {sorted(list(VALID_FAULT_TYPES))}",
+        )
+
+    # 1. Use provided raw telemetry or generate fresh
+    raw_data = req.raw_telemetry
+    if not raw_data:
+        raw_data = generate_telemetry(clean_type)
+
+    # 2. Validate payload
+    valid, err = validate_generated_payload(raw_data)
+    if not valid:
+        raise HTTPException(status_code=400, detail=f"Malformed telemetry payload: {err}")
+
+    # 3. Adapt to canonical record with telemetry_origin='GENERATED_TEST'
+    try:
+        record = adapt_to_canonical_record(raw_data, fault_type=clean_type)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to adapt telemetry: {str(e)}")
+
+    # 4. Execute Multi-Agent Diagnosis Pipeline
+    inc_id = f"INC-GEN-{uuid.uuid4().hex[:6]}"
+    result = orchestrator.run_diagnosis(
+        telemetry=[record],
+        incident_id=inc_id,
+        scenario_id=f"official_gen_{clean_type}",
+    )
+
+    # Guarantee provenance is strictly GENERATED_TEST
+    result["telemetry_origin"] = "GENERATED_TEST"
+    if "canonical_report" in result:
+        result["canonical_report"]["telemetry_origin"] = "GENERATED_TEST"
+
+    return {
+        "success": True,
+        "incident_id": inc_id,
+        "fault_type": clean_type,
+        "telemetry_origin": "GENERATED_TEST",
+        "raw_telemetry": raw_data,
+        "status": result["status"],
+        "suspected_root_cause": result["suspected_root_cause"],
+        "confidence": result["confidence"],
+        "affected_devices": result["affected_devices"],
+        "timeline_events": result.get("timeline_events", []),
+        "competing_hypotheses": result.get("competing_hypotheses", []),
+        "report": result.get("canonical_report"),
+        "message_bus": result.get("message_bus", []),
+        "telemetry": result.get("telemetry", []),
+        "full_result": result,
+    }
+
 

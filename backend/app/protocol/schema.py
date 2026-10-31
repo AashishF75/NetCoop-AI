@@ -110,10 +110,10 @@ class TelemetryRecord(BaseModel):
     dhcp_response_ms: Optional[float] = None
     dhcp_pool_utilization_pct: Optional[float] = None
 
-    # Origin & Source metadata (SIMULATED_SCENARIO, CUSTOM_IMPORT, LIVE_HOST, LIVE_DEVICE)
+    # Origin & Source metadata (SIMULATED_SCENARIO, CUSTOM_IMPORT, LIVE_HOST, LIVE_DEVICE, GENERATED_TEST)
     telemetry_origin: str = Field(
         default="SIMULATED_SCENARIO",
-        description="SIMULATED_SCENARIO, CUSTOM_IMPORT, LIVE_HOST, LIVE_DEVICE",
+        description="SIMULATED_SCENARIO, CUSTOM_IMPORT, LIVE_HOST, LIVE_DEVICE, GENERATED_TEST",
     )
     source_id: Optional[str] = Field(default=None, description="Identifier of live network source adapter")
 
@@ -258,7 +258,7 @@ class CanonicalDiagnosticReport(BaseModel):
     inter_agent_messages_count: int
     telemetry_origin: str = Field(
         default="SIMULATED_SCENARIO",
-        description="SIMULATED_SCENARIO, CUSTOM_IMPORT, LIVE_HOST, LIVE_DEVICE",
+        description="SIMULATED_SCENARIO, CUSTOM_IMPORT, LIVE_HOST, LIVE_DEVICE, GENERATED_TEST",
     )
 
 
