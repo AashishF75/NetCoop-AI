@@ -86,3 +86,16 @@ class CollectorBackendClient:
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.post(f"{self.backend_url}/api/collectors/telemetry", json=payload)
             return resp.status_code == 200
+
+    async def fetch_devices(self, collector_id: str) -> List[Dict[str, Any]]:
+        """
+        Fetches devices registered to this collector from the cloud backend.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                resp = await client.get(f"{self.backend_url}/api/collectors/{collector_id}/devices")
+                if resp.status_code == 200:
+                    return resp.json()
+        except Exception:
+            pass
+        return []

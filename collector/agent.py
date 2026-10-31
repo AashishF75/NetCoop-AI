@@ -43,10 +43,12 @@ class NetworkCollectorAgent:
 
             logger.info("Initiating secure pairing with backend: %s", self.settings.backend_url)
             reg_data = await self.client.register(
-                collector_id=self.settings.collector_id,
+                collector_id=self.settings.collector_id or "col-auto",
                 enrollment_token=self.settings.enrollment_token,
             )
             self.settings.session_token = reg_data["session_token"]
+            if reg_data.get("collector_id"):
+                self.settings.collector_id = reg_data["collector_id"]
             logger.info("Pairing successful! Session token acquired.")
 
     async def _heartbeat_loop(self) -> None:
@@ -120,6 +122,29 @@ class NetworkCollectorAgent:
                         )
                     except Exception as e:
                         logger.warning("Failed to push syslog batch: %s", e)
+
+            # Synchronize any devices registered via the remote Cloud NOC Dashboard
+            if self.settings.collector_id and self.settings.session_token:
+                try:
+                    remote_devs = await self.client.fetch_devices(self.settings.collector_id)
+                    existing_ids = {d.device_id for d in self.settings.devices}
+                    for rd in remote_devs:
+                        dev_id = rd.get("device_id")
+                        if dev_id and dev_id not in existing_ids:
+                            proto_str = str(rd.get("protocol", "TCP_PROBE")).upper()
+                            proto = getattr(DeviceProtocol, proto_str, DeviceProtocol.TCP_PROBE)
+                            new_dev = LocalDeviceConfig(
+                                device_id=dev_id,
+                                name=rd.get("name") or dev_id,
+                                device_type=rd.get("device_type", "router"),
+                                host=rd.get("ip", "127.0.0.1"),
+                                port=rd.get("port", 80),
+                                protocol=proto,
+                            )
+                            self.settings.devices.append(new_dev)
+                            logger.info("Synchronized device from cloud backend: %s (%s:%d)", dev_id, new_dev.host, new_dev.port)
+                except Exception as e:
+                    logger.debug("Device sync skipped: %s", e)
 
             # Poll devices
             for dev in self.settings.devices:

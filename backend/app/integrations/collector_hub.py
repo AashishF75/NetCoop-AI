@@ -196,6 +196,12 @@ class CollectorHub:
         """
         collector = self._collectors.get(req.collector_id)
         if not collector:
+            # Fallback: locate collector by unique enrollment token
+            for c in self._collectors.values():
+                if c.enrollment_token == req.enrollment_token:
+                    collector = c
+                    break
+        if not collector:
             raise ValueError(f"Unknown collector ID: '{req.collector_id}'")
 
         if collector.status == CollectorStatus.REVOKED:
