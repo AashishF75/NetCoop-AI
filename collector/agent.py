@@ -77,7 +77,7 @@ class NetworkCollectorAgent:
             return
 
         try:
-            if device.protocol == DeviceProtocol.TCP_PROBE:
+            if device.protocol in (DeviceProtocol.TCP_PROBE, DeviceProtocol.PING_PROBE):
                 records, avail, unsupp = await probe_tcp_reachability(device)
             elif device.protocol == DeviceProtocol.HOST_METRICS:
                 records, avail, unsupp = await poll_host_metrics(device)

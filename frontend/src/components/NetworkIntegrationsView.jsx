@@ -1032,6 +1032,7 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
                     className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-100"
                   >
                     <option value="TCP_PROBE">TCP Probe</option>
+                    <option value="PING_PROBE">ICMP Ping Probe</option>
                     <option value="HOST_METRICS">Host OS Metrics (CPU/RAM/NIC)</option>
                     <option value="SNMP">SNMP v2c/v3</option>
                     <option value="RESTCONF">RESTCONF / REST</option>

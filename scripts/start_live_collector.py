@@ -1,7 +1,7 @@
 """
 Start a background live collector for NetCoop AI.
-Enrolls with the local backend, registers host metrics and gateway probe,
-and streams live telemetry continuously.
+Enrolls with the local backend, registers host metrics, local probes,
+and the live phone hotspot gateway reachability probe, streaming live telemetry continuously.
 """
 import sys
 import os
@@ -20,11 +20,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("LiveCollectorRunner")
 
 BACKEND_URL = "http://127.0.0.1:8000"
+GATEWAY_IP = "10.244.241.91"
 
 async def main():
     hostname = socket.gethostname()
     host_dev_id = f"HOST-{hostname[:12].upper()}"
-    gw_dev_id = "LAN-Gateway-01"
+    gw_ping_id = "GATEWAY-HOTSPOT-PING"
+    gw_tcp_id = "GATEWAY-HOTSPOT-TCP80"
 
     # Enroll
     enroll_resp = requests.post(
@@ -38,28 +40,38 @@ async def main():
     logger.info("Enrolled collector: %s", collector_id)
 
     # Register devices on backend
-    requests.post(
-        f"{BACKEND_URL}/api/collectors/{collector_id}/devices",
-        json={
+    devices_to_register = [
+        {
             "device_id": host_dev_id,
             "name": f"Collector Host Appliance ({hostname})",
             "device_type": "server",
             "ip": "127.0.0.1",
             "port": 8000,
             "protocol": "HOST_METRICS",
-        }
-    )
-    requests.post(
-        f"{BACKEND_URL}/api/collectors/{collector_id}/devices",
-        json={
-            "device_id": gw_dev_id,
-            "name": "Local Gateway Probe",
+        },
+        {
+            "device_id": gw_ping_id,
+            "name": f"Phone Hotspot Gateway Ping ({GATEWAY_IP})",
             "device_type": "router",
-            "ip": "127.0.0.1",
-            "port": 8000,
+            "ip": GATEWAY_IP,
+            "port": 0,
+            "protocol": "PING_PROBE",
+        },
+        {
+            "device_id": gw_tcp_id,
+            "name": f"Phone Hotspot Gateway TCP80 ({GATEWAY_IP}:80)",
+            "device_type": "router",
+            "ip": GATEWAY_IP,
+            "port": 80,
             "protocol": "TCP_PROBE",
-        }
-    )
+        },
+    ]
+
+    for dev in devices_to_register:
+        requests.post(
+            f"{BACKEND_URL}/api/collectors/{collector_id}/devices",
+            json=dev,
+        )
 
     settings = CollectorSettings(
         backend_url=BACKEND_URL,
@@ -78,11 +90,20 @@ async def main():
                 polling_interval_sec=10,
             ),
             LocalDeviceConfig(
-                device_id=gw_dev_id,
-                name="Local Gateway Probe",
+                device_id=gw_ping_id,
+                name=f"Phone Hotspot Gateway Ping ({GATEWAY_IP})",
                 device_type="router",
-                host="127.0.0.1",
-                port=8000,
+                host=GATEWAY_IP,
+                port=0,
+                protocol=DeviceProtocol.PING_PROBE,
+                polling_interval_sec=10,
+            ),
+            LocalDeviceConfig(
+                device_id=gw_tcp_id,
+                name=f"Phone Hotspot Gateway TCP80 ({GATEWAY_IP}:80)",
+                device_type="router",
+                host=GATEWAY_IP,
+                port=80,
                 protocol=DeviceProtocol.TCP_PROBE,
                 polling_interval_sec=10,
             ),
