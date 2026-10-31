@@ -3,7 +3,22 @@
  * Connects to FastAPI backend endpoints.
  */
 
-const API_BASE = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '') + '/api';
+const PROD_RENDER_URL = 'https://netcoop-ai-backend.onrender.com';
+
+function resolveApiBase() {
+  const envUrl = (import.meta.env.VITE_API_URL || '').trim();
+  if (envUrl) {
+    return envUrl.replace(/\/$/, '') + '/api';
+  }
+  // When running on Vercel deployment, default to production Render backend URL
+  if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+    return `${PROD_RENDER_URL}/api`;
+  }
+  // Fallback for local Vite dev proxy or relative path
+  return '/api';
+}
+
+export const API_BASE = resolveApiBase();
 
 export async function fetchHealth() {
   const res = await fetch(`${API_BASE}/health`);

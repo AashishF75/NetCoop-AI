@@ -54,38 +54,48 @@ export default function App() {
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [pastInvestigations, setPastInvestigations] = useState([]);
 
-  // Initial data loading
-  useEffect(() => {
-    async function init() {
-      try {
-        const [topoData, scData, pastInvList] = await Promise.all([
-          fetchTopology(),
-          fetchScenarios(),
-          fetchInvestigations().catch(() => []),
-        ]);
-        setTopology(topoData);
-        setScenarios(scData);
-        setPastInvestigations(pastInvList);
+  // Initial data loading with cold-start auto-retry
+  const initDashboard = async (retryAttempt = 0) => {
+    try {
+      setErrorMsg(null);
+      const [topoData, scData, pastInvList] = await Promise.all([
+        fetchTopology(),
+        fetchScenarios(),
+        fetchInvestigations().catch(() => []),
+      ]);
+      setTopology(topoData);
+      setScenarios(scData);
+      setPastInvestigations(pastInvList);
 
-        // Load telemetry for default showstopper scenario: Scenario 8 (conflicting_evidence)
-        const defaultTelem = await fetchScenarioTelemetry('conflicting_evidence');
-        setTelemetry(defaultTelem.telemetry || []);
+      // Load telemetry for default showstopper scenario: Scenario 8 (conflicting_evidence)
+      const defaultTelem = await fetchScenarioTelemetry('conflicting_evidence');
+      setTelemetry(defaultTelem.telemetry || []);
 
-        // If past investigations exist, pre-populate with the latest
-        if (pastInvList.length > 0) {
-          const latest = await fetchInvestigationById(pastInvList[0].incident_id);
-          setDiagnosticResult(latest);
-          if (latest.telemetry) setTelemetry(latest.telemetry);
-          const evts = latest.timeline_events || [];
-          setTimelineEvents(evts);
-          setCurrentStepIndex(evts.length > 0 ? evts.length - 1 : 0);
-        }
-      } catch (err) {
-        console.error('Failed to initialize NOC dashboard:', err);
-        setErrorMsg(`Failed to connect to backend engine: ${err.message}`);
+      // If past investigations exist, pre-populate with the latest
+      if (pastInvList.length > 0) {
+        const latest = await fetchInvestigationById(pastInvList[0].incident_id);
+        setDiagnosticResult(latest);
+        if (latest.telemetry) setTelemetry(latest.telemetry);
+        const evts = latest.timeline_events || [];
+        setTimelineEvents(evts);
+        setCurrentStepIndex(evts.length > 0 ? evts.length - 1 : 0);
+      }
+      setErrorMsg(null);
+    } catch (err) {
+      console.warn(`Dashboard init attempt ${retryAttempt + 1} failed:`, err);
+      if (retryAttempt < 2) {
+        setErrorMsg(`Connecting to cloud backend... Render service is waking up from standby (attempt ${retryAttempt + 1}/3)...`);
+        setTimeout(() => {
+          initDashboard(retryAttempt + 1);
+        }, 3000 * (retryAttempt + 1));
+      } else {
+        setErrorMsg(`Failed to connect to backend engine: ${err.message}. If the cloud backend was sleeping, please click Retry.`);
       }
     }
-    init();
+  };
+
+  useEffect(() => {
+    initDashboard(0);
   }, []);
 
   // Timer loop for replay stepping
@@ -262,10 +272,20 @@ export default function App() {
       {/* Global Error Banner */}
       {errorMsg && (
         <div className="bg-rose-950/80 border-b border-rose-800 text-rose-200 px-6 py-2.5 text-xs font-mono flex items-center justify-between">
-          <span>Error: {errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)} className="underline hover:text-white">
-            Dismiss
-          </button>
+          <div className="flex items-center gap-2">
+            <span>⚠️ {errorMsg}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => initDashboard(0)}
+              className="px-2.5 py-1 rounded bg-rose-800/80 hover:bg-rose-700 text-white font-semibold transition-colors"
+            >
+              Retry Connection
+            </button>
+            <button onClick={() => setErrorMsg(null)} className="underline hover:text-white">
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 
