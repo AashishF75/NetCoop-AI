@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #07090e;
+  color: #f1f5f9;
+  overflow-x: hidden;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0b0f17;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* React Flow NOC Styling */
+.react-flow__pane {
+  background-color: #080b12 !important;
+}
+
+.react-flow__background {
+  background-color: #080b12 !important;
+}
+
+.react-flow__controls {
+  background: #111827 !important;
+  border: 1px solid #1f293d !important;
+  border-radius: 8px !important;
+}
+
+.react-flow__controls-button {
+  background: #111827 !important;
+  border-bottom: 1px solid #1f293d !important;
+  color: #94a3b8 !important;
+}
+
+.react-flow__controls-button:hover {
+  background: #1e293b !important;
+  color: #38bdf8 !important;
+}
+
+/* Pulsing red alert for implicated nodes */
+@keyframes nodePulseAlert {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7), 0 0 15px rgba(239, 68, 68, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 16px rgba(239, 68, 68, 0), 0 0 25px rgba(239, 68, 68, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0), 0 0 15px rgba(239, 68, 68, 0.4);
+  }
+}
+
+.node-implicated-pulse {
+  animation: nodePulseAlert 1.8s infinite;
+  border-color: #ef4444 !important;
+}
+
+/* Glow effects */
+.glow-cyan {
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.35);
+}
+
+.glow-rose {
+  box-shadow: 0 0 15px rgba(244, 63, 94, 0.35);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.35);
+}
+
+.glow-amber {
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.35);
+}
