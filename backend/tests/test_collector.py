@@ -1,0 +1,318 @@
+"""
+Comprehensive Automated Tests for On-Premise Collector Subsystem.
+Validates enrollment tokens, pairing handshakes, session token revocation,
+anti-scan validation, telemetry ingestion, stale data handling, and live diagnosis.
+"""
+
+import pytest
+import asyncio
+from datetime import datetime, timezone, timedelta
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.integrations.collector_hub import get_collector_hub, DeviceConnectionStatus, CollectorStatus
+from app.protocol.schema import TelemetryRecord
+from collector.config import LocalDeviceConfig, DeviceProtocol
+from collector.adapters.reachability_probe import probe_tcp_reachability
+from collector.adapters.syslog_receiver import SyslogServer
+
+client = TestClient(app)
+
+
+def test_collector_enrollment_token_generation():
+    """Tests generating an enrollment token and pairing commands."""
+    resp = client.post("/api/collectors/enroll", json={"name": "Test-Site-Collector"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "enrollment_token" in data
+    assert data["enrollment_token"].startswith("nc_coll_")
+    assert "collector_id" in data
+    assert "pairing_command_windows" in data
+    assert "pairing_command_linux" in data
+    assert data["name"] == "Test-Site-Collector"
+
+
+def test_collector_pairing_handshake_and_authentication():
+    """Tests collector registration handshake using enrollment token."""
+    # 1. Enroll
+    enroll_resp = client.post("/api/collectors/enroll", json={"name": "Handshake-Collector"})
+    enroll_data = enroll_resp.json()
+    col_id = enroll_data["collector_id"]
+    token = enroll_data["enrollment_token"]
+
+    # 2. Handshake with wrong token -> 403
+    bad_resp = client.post(
+        "/api/collectors/register",
+        json={
+            "collector_id": col_id,
+            "enrollment_token": "nc_coll_invalid_token",
+            "hostname": "local-box",
+            "local_ip": "192.168.1.50",
+            "os_type": "Windows 11",
+        },
+    )
+    assert bad_resp.status_code == 403
+
+    # 3. Handshake with valid token -> 200 and session token
+    ok_resp = client.post(
+        "/api/collectors/register",
+        json={
+            "collector_id": col_id,
+            "enrollment_token": token,
+            "hostname": "local-box",
+            "local_ip": "192.168.1.50",
+            "os_type": "Windows 11",
+        },
+    )
+    assert ok_resp.status_code == 200
+    reg_data = ok_resp.json()
+    assert "session_token" in reg_data
+    assert reg_data["session_token"].startswith("nc_sess_")
+
+    # 4. Heartbeat with session token
+    sess_token = reg_data["session_token"]
+    hb_resp = client.post(
+        "/api/collectors/heartbeat",
+        json={"collector_id": col_id, "session_token": sess_token, "active_device_count": 2},
+    )
+    assert hb_resp.status_code == 200
+    assert hb_resp.json()["status"] == "ACK"
+
+    # 5. Heartbeat with bad session token -> 401
+    bad_hb = client.post(
+        "/api/collectors/heartbeat",
+        json={"collector_id": col_id, "session_token": "nc_sess_invalid", "active_device_count": 0},
+    )
+    assert bad_hb.status_code == 401
+
+
+def test_collector_revocation_lifecycle():
+    """Tests revoking a collector and ensuring subsequent requests are blocked."""
+    enroll_resp = client.post("/api/collectors/enroll", json={"name": "Revocable-Collector"})
+    enroll_data = enroll_resp.json()
+    col_id = enroll_data["collector_id"]
+    token = enroll_data["enrollment_token"]
+
+    reg_resp = client.post(
+        "/api/collectors/register",
+        json={
+            "collector_id": col_id,
+            "enrollment_token": token,
+            "hostname": "host",
+            "local_ip": "10.0.0.5",
+            "os_type": "Linux",
+        },
+    )
+    sess_token = reg_resp.json()["session_token"]
+
+    # Revoke collector
+    rev_resp = client.post(f"/api/collectors/{col_id}/revoke")
+    assert rev_resp.status_code == 200
+
+    # Heartbeat must now be rejected
+    hb_resp = client.post(
+        "/api/collectors/heartbeat",
+        json={"collector_id": col_id, "session_token": sess_token, "active_device_count": 0},
+    )
+    assert hb_resp.status_code == 401
+
+    # Telemetry push must be rejected
+    telem_resp = client.post(
+        "/api/collectors/telemetry",
+        json={
+            "collector_id": col_id,
+            "session_token": sess_token,
+            "device_id": "Router-X",
+            "records": [],
+        },
+    )
+    assert telem_resp.status_code == 401
+
+
+def test_anti_scanning_validation_on_device_registration():
+    """Tests that registering devices on collectors strictly rejects CIDR masks and scan ranges."""
+    enroll_resp = client.post("/api/collectors/enroll", json={"name": "AntiScan-Collector"})
+    col_id = enroll_resp.json()["collector_id"]
+
+    # Valid IP
+    ok_dev = client.post(
+        f"/api/collectors/{col_id}/devices",
+        json={
+            "device_id": "Core-Router",
+            "name": "Core Router",
+            "device_type": "router",
+            "ip": "192.168.1.1",
+            "port": 80,
+            "protocol": "TCP_PROBE",
+        },
+    )
+    assert ok_dev.status_code == 200
+
+    # CIDR mask notation must be rejected
+    cidr_dev = client.post(
+        f"/api/collectors/{col_id}/devices",
+        json={
+            "device_id": "Subnet-Scan",
+            "name": "Scan",
+            "device_type": "router",
+            "ip": "192.168.1.0/24",
+            "port": 80,
+            "protocol": "TCP_PROBE",
+        },
+    )
+    assert cidr_dev.status_code == 400
+    assert "Subnet CIDR notation is rejected" in cidr_dev.json()["detail"]
+
+
+def test_telemetry_push_and_provenance_tagging():
+    """Tests pushing live telemetry from collector and verifying LIVE_DEVICE origin."""
+    enroll_resp = client.post("/api/collectors/enroll", json={"name": "Telemetry-Collector"})
+    col_id = enroll_resp.json()["collector_id"]
+    token = enroll_resp.json()["enrollment_token"]
+
+    reg_resp = client.post(
+        "/api/collectors/register",
+        json={
+            "collector_id": col_id,
+            "enrollment_token": token,
+            "hostname": "collector-box",
+            "local_ip": "192.168.1.100",
+            "os_type": "Linux",
+        },
+    )
+    sess_token = reg_resp.json()["session_token"]
+
+    telemetry_records = [
+        {
+            "device_id": "LAN-Router-01",
+            "device_type": "router",
+            "device_status": "UP",
+            "latency_ms": 1.45,
+            "packet_loss_pct": 0.0,
+            "interface_crc_errors": 0,
+            "cpu_utilization_pct": 42.0,
+        }
+    ]
+
+    push_resp = client.post(
+        "/api/collectors/telemetry",
+        json={
+            "collector_id": col_id,
+            "session_token": sess_token,
+            "device_id": "LAN-Router-01",
+            "records": telemetry_records,
+            "metrics_available": ["latency_ms", "packet_loss_pct", "cpu_utilization_pct"],
+            "metrics_unsupported": ["wifi_rssi_dbm"],
+        },
+    )
+    assert push_resp.status_code == 200
+    assert push_resp.json()["ingested_records"] == 1
+
+    # Verify inventory reflects live status
+    inv_resp = client.get("/api/collectors/inventory")
+    assert inv_resp.status_code == 200
+    inv = inv_resp.json()
+    device = next((d for d in inv["devices"] if d["device_id"] == "LAN-Router-01"), None)
+    assert device is not None
+    assert device["status"] == "STREAMING_LIVE"
+    assert "cpu_utilization_pct" in device["metrics_available"]
+    assert "wifi_rssi_dbm" in device["metrics_unsupported"]
+
+
+def test_live_diagnosis_with_collector_telemetry_no_synthetic_fallback():
+    """Tests that live diagnosis consumes real collector records with LIVE_DEVICE provenance."""
+    hub = get_collector_hub()
+    hub._telemetry_cache.clear()
+
+    # When no telemetry is available, diagnose-live must return error or fallback to host probe, NOT synthetic data
+    resp_empty = client.post("/api/integrations/diagnose-live", json={})
+    # Must succeed with host probe or return error, but NEVER claim LIVE_DEVICE
+    if resp_empty.status_code == 200:
+        data = resp_empty.json()
+        assert data["telemetry_origin"] in ["LIVE_HOST", "LIVE"]
+        assert data["telemetry_origin"] != "LIVE_DEVICE"
+
+    # Inject real collector telemetry
+    enroll_resp = client.post("/api/collectors/enroll", json={"name": "Diagnosis-Collector"})
+    col_id = enroll_resp.json()["collector_id"]
+    token = enroll_resp.json()["enrollment_token"]
+
+    reg_resp = client.post(
+        "/api/collectors/register",
+        json={
+            "collector_id": col_id,
+            "enrollment_token": token,
+            "hostname": "lan-box",
+            "local_ip": "10.0.0.1",
+            "os_type": "Windows",
+        },
+    )
+    sess_token = reg_resp.json()["session_token"]
+
+    client.post(
+        "/api/collectors/telemetry",
+        json={
+            "collector_id": col_id,
+            "session_token": sess_token,
+            "device_id": "LAN-Core-Router",
+            "records": [
+                {
+                    "device_id": "LAN-Core-Router",
+                    "device_type": "router",
+                    "device_status": "UP",
+                    "latency_ms": 2.1,
+                    "packet_loss_pct": 0.0,
+                    "cpu_utilization_pct": 28.0,
+                }
+            ],
+        },
+    )
+
+    # Now diagnose-live must prioritize the live collector device
+    diag_resp = client.post("/api/integrations/diagnose-live", json={})
+    assert diag_resp.status_code == 200
+    diag_data = diag_resp.json()
+    assert diag_data["success"] is True
+    assert diag_data["telemetry_origin"] == "LIVE_DEVICE"
+    assert "LAN-Core-Router" in diag_data["devices_polled"]
+    assert "INC-LIVE-" in diag_data["incident_id"]
+
+
+@pytest.mark.asyncio
+async def test_reachability_probe_adapter():
+    """Tests collector's TCP reachability probe adapter."""
+    dev = LocalDeviceConfig(
+        device_id="Test-Probe-Target",
+        name="Test Target",
+        host="127.0.0.1",
+        port=80,
+        protocol=DeviceProtocol.TCP_PROBE,
+        timeout_sec=0.5,
+    )
+    records, avail, unsupp = await probe_tcp_reachability(dev)
+    assert len(records) == 1
+    assert records[0].telemetry_origin == "LIVE_DEVICE"
+    assert "latency_ms" in avail
+    assert "cpu_utilization_pct" in unsupp
+    assert records[0].custom_metrics["probe_type"] == "TCP_SOCKET_CONNECT"
+
+
+def test_syslog_server_parser():
+    """Tests collector's local syslog parser handling router messages."""
+    server = SyslogServer(port=5140)
+    server.handle_syslog_line(
+        "<189>120: Core-Router-HQ: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down",
+        "192.168.1.1",
+    )
+    server.handle_syslog_line(
+        "<189>121: Core-Router-HQ: %SYS-1-CPURISINGTHRESHOLD: High CPU utilization detected: 96% in last 5 minutes",
+        "192.168.1.1",
+    )
+
+    recs = server.drain_records()
+    assert len(recs) == 2
+    assert any(r.packet_loss_pct == 100.0 for r in recs)
+    assert any(r.cpu_utilization_pct == 96.0 for r in recs)
+    for r in recs:
+        assert r.telemetry_origin == "LIVE_DEVICE"
+

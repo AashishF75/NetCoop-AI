@@ -5,6 +5,9 @@ __pycache__/
 *.so
 .Python
 env/
+venv/
+.venv/
+ENV/
 build/
 develop-eggs/
 dist/
@@ -32,6 +35,27 @@ frontend/dist/
 frontend/dist-ssr/
 *.local
 
+# Environment & Secrets
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.cert
+*.crt
+secrets.json
+
+# NetCoop Runtime & Local Data
+backend/data/*.json
+!backend/data/.gitkeep
+collector_config.json
+*.log
+*.sqlite
+*.sqlite3
+*.db
+browser_verification_screenshots/
+backend/browser_verification_screenshots/
+
 # Editor
 .vscode/
 .idea/
@@ -41,3 +65,11 @@ frontend/dist-ssr/
 # OS
 Thumbs.db
 Desktop.ini
+
+# NetCoop Runtime & Local Data
+backend/data/*.json
+!backend/data/.gitkeep
+collector_config.json
+*.log
+browser_verification_screenshots/
+backend/browser_verification_screenshots/

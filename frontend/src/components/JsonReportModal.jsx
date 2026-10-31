@@ -10,7 +10,9 @@ export default function JsonReportModal({ isOpen, onClose, report }) {
   const jsonString = report ? JSON.stringify(report, null, 2) : '{\n  "status": "NO_REPORT_AVAILABLE"\n}';
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(jsonString);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(jsonString).catch(() => {});
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

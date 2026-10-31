@@ -27,6 +27,7 @@ const SCENARIO_ICONS = {
   missing_telemetry: HelpCircle,
   incompatible_agent_messages: ShieldAlert,
   conflicting_evidence: Cpu,
+  shared_upstream_fault: AlertOctagon,
 };
 
 export default function ScenarioSelector({
@@ -83,7 +84,7 @@ Edge-Switch-01,140.0,7.0,18.0,0.0`;
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            Benchmark Scenarios (8)
+            Benchmark Scenarios {scenarios.length > 0 ? `(${scenarios.length})` : ''}
           </button>
           <button
             onClick={() => setActiveTab('custom')}

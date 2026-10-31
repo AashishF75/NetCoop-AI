@@ -86,3 +86,12 @@ def test_scenario_conflicting_evidence(orchestrator):
     # Check that message bus contains CONFLICT_DETECTED
     message_types = [m["message_type"] for m in result["message_bus"]]
     assert "CONFLICT_DETECTED" in message_types
+
+
+def test_scenario_shared_upstream_fault(orchestrator):
+    telemetry = ScenarioCatalog.generate_telemetry("shared_upstream_fault")
+    result = orchestrator.run_diagnosis(telemetry, scenario_id="shared_upstream_fault")
+    assert result["status"] in ["CONFIRMED", "SUSPECTED"]
+    assert ("Physical" in result["suspected_root_cause"] or "Interface" in result["suspected_root_cause"] or "Transceiver" in result["suspected_root_cause"])
+    assert result["confidence"] >= 0.85
+    assert len(result["canonical_report"]["proactive_warnings"]) > 0

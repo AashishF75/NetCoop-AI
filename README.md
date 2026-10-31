@@ -4,7 +4,10 @@
 [![Protocol](https://img.shields.io/badge/Protocol-Canonical_v1.0.0-cyan.svg)](file:///backend/app/protocol/schema.py)
 [![Backend](https://img.shields.io/badge/FastAPI-Python_3.13-009688.svg)](file:///backend/app/main.py)
 [![Frontend](https://img.shields.io/badge/React_18-Vite_Tailwind-61dafb.svg)](file:///frontend/src/App.jsx)
-[![Tests](https://img.shields.io/badge/Pytest-30%2F30_Passing-brightgreen.svg)](file:///backend/tests)
+[![Pytest](https://img.shields.io/badge/Pytest-68%2F68_Passing-brightgreen.svg)](file:///backend/tests)
+[![Collector](https://img.shields.io/badge/Collector-On--Premise_Zero--Inbound-success.svg)](file:///DEPLOYMENT_AND_COLLECTOR_GUIDE.md)
+[![Playwright](https://img.shields.io/badge/Playwright-Verified_Live_E2E-emerald.svg)](file:///backend/test_browser_flow.py)
+[![Scenarios](https://img.shields.io/badge/Scenarios-9_Benchmarks_Passing-blueviolet.svg)](file:///backend/app/scenarios/generator.py)
 
 ---
 
@@ -148,7 +151,7 @@ Simply double-click `start.bat` or run:
 #### 1. Backend Setup
 ```bash
 # Navigate to backend and install requirements
-cd c:\NetCoopAI\backend
+cd backend
 pip install -r requirements.txt
 
 # Run automated test suite
@@ -161,7 +164,7 @@ python -m uvicorn app.main:app --app-dir . --host 127.0.0.1 --port 8000
 #### 2. Frontend Setup
 ```bash
 # Navigate to frontend and install dependencies
-cd c:\NetCoopAI\frontend
+cd frontend
 npm install
 
 # Start Vite development server
@@ -213,22 +216,74 @@ backend/tests/test_scenarios.py::test_scenario_weak_wifi_signal PASSED   [ 86%]
 backend/tests/test_scenarios.py::test_scenario_interface_fault PASSED    [ 90%]
 backend/tests/test_scenarios.py::test_scenario_dns_dhcp_failure PASSED   [ 93%]
 backend/tests/test_scenarios.py::test_scenario_missing_telemetry PASSED  [ 96%]
-backend/tests/test_scenarios.py::test_scenario_conflicting_evidence PASSED [100%]
+backend/tests/test_scenarios.py::test_scenario_conflicting_evidence PASSED [ 83%]
+backend/tests/test_simulation.py::test_digital_twin_topology_and_dependencies PASSED [ 85%]
+backend/tests/test_simulation.py::test_digital_twin_health_and_sla_scoring PASSED [ 88%]
+backend/tests/test_simulation.py::test_what_if_remediation_simulation_deterministic PASSED [ 90%]
+backend/tests/test_simulation.py::test_strategy_comparison_matrix PASSED [ 92%]
+backend/tests/test_simulation.py::test_multi_incident_prioritization_ordering PASSED [ 95%]
+backend/tests/test_simulation.py::test_investigation_explanation_generation PASSED [ 97%]
+backend/tests/test_simulation.py::test_remediation_strategies_for_link_congestion PASSED [100%]
 
-============================= 30 passed in 0.33s ==============================
+============================= 42 passed in 2.40s ==============================
 ```
 
 ---
 
-## 7. Project Structure
+## 7. Autonomous Investigation Replay & Interactive Device Inspection
+
+NetCoop AI includes a full **Autonomous Investigation Replay** engine:
+- **Backend Event Stream**: The orchestrator emits a sequential `InvestigationEvent` timeline stream (`INCIDENT_DETECTED` ➔ `AGENT_ACTIVATED` ➔ `EVIDENCE_COLLECTED` ➔ `CROSS_AGENT_QUERY` ➔ `CONFLICT_DETECTED` ➔ `HYPOTHESIS_CHALLENGED` ➔ `ROOT_CAUSE_RESOLVED` ➔ `REMEDIATION_GENERATED`).
+- **Interactive Replay Controls**: Real-time Play, Pause, Step Next, Step Prev, Speed Toggles (1x, 2x, 3x), and a timeline scrubber.
+- **Inspectable Payloads**: Click "Inspect JSON" on any timeline event to review the exact canonical `AgentMessage` or evidence payload.
+- **Topology Dynamic Synchronization**: As events step through, implicated devices glow and display active communication badges (e.g. `[Bot] perf-agent-01 querying...`). Directional fault propagation paths are clearly mapped (`⚡ Fault Path`).
+- **Interactive Device Details Drawer**: Clicking any network device on the React Flow topology opens a real-time sliding drawer comparing observed telemetry against baseline SLA operational thresholds.
+- **Persistent Investigation Store**: All completed investigations are automatically persisted in `backend/data/investigations.json` and can be retrieved, replayed, or audited via `GET /api/investigations`.
+
+---
+
+## 8. Autonomous Network Intelligence & Digital Twin
+
+- **Autonomous NOC Command Center**: Executive cockpit unifying composite network health, cross-incident topological clusters, proactive pre-breach forecasts, and swarm consensus trace.
+- **Cross-Incident Correlation Engine**: Groups concurrent downstream symptoms to shared upstream infrastructure choke points (e.g. `Agg-Switch-01`), eliminating redundant technician tickets.
+- **Proactive Risk Warning Radar**: Deterministic multi-point linear trend analysis calculates metric drift rates, projects 10-minute metrics, and estimates time-to-breach before golden SLAs fail.
+- **Explainable SLA Health Scoring**: Transparent point deduction audit attributing deductions to specific empirical metric breaches (e.g. -45 pts for CPU > 90%) against golden SLA baselines.
+- **Agent Investigation Trace**: Explicit stopping conditions (`EVIDENTIAL_CONSENSUS`, `SUFFICIENT_PROOF`), bounded rounds (max 2), dynamic query priority ranking, and zero recursive loops.
+- **Network Digital Twin**: Models enterprise network topology, operational SLA bounds, and live health index.
+- **What-If Remediation Simulator**: Projects deterministic data-plane recovery, before/after metric deltas, and side-by-side trade-offs for 3 candidate strategies.
+- **Fault Injection Studio**: Interactive scenario builder allowing operators to adjust sliders, drop telemetry dimensions, or apply quick fault templates to stress-test multi-agent reasoning.
+
+---
+
+## 9. Live Network Integrations & Telemetry Adapters
+
+NetCoop AI includes a modular adapter framework enabling real-time telemetry ingestion from physical and virtual network infrastructure:
+
+### Supported Ingestion Protocols
+1. **Active Socket / Ping Probes (`PING_PROBE`)**: Non-blocking asynchronous TCP/socket latency, jitter, and packet loss measurement.
+2. **Host Appliance Kernel Monitor (`SERVER_HOST`)**: Real OS physical memory load (`%`), CPU utilization (`%`), and hardware core count via native OS system calls (Windows `kernel32` ctypes & POSIX `/proc`).
+3. **RESTCONF / Router REST APIs (`REST_API`)**: Queries RFC 8040 RESTCONF interface states (`/restconf/data/ietf-interfaces:interfaces`) with Bearer, API key, or Basic authentication.
+4. **SNMP v2c MIB-II Interface Poller (`SNMP`)**: Real UDP socket ASN.1 BER queries for standard MIB-II OIDs (sysDescr, ifOperStatus, ifInErrors).
+5. **Syslog Event Collector (`SYSLOG`)**: Ingests and normalizes RFC 3164 / 5424 and Cisco IOS syslog streams into canonical fault signals.
+6. **CSV / JSON Custom File Ingestion (`CSV_IMPORT` / `JSON_IMPORT`)**: Manual and automated export imports tagged as `CUSTOM_IMPORT`.
+
+### Security Safeguards & Integrity Standards
+- **Anti-Scanning Policy**: Target validation strictly forbids CIDR mask notations (`/24`, `/16`), IP ranges, and shell characters to prevent unauthorized subnet scanning.
+- **Write-Only Credential Isolation**: Passwords, API keys, and SNMP community strings are encrypted in memory and strictly redacted (`has_credentials: true`) from public REST APIs and browser state.
+- **Human-in-the-Loop Remediation**: Remediation actions provide actionable CLI procedures with rollback plans for operator authorization; no unvetted automated configuration changes are pushed to physical routers.
+- **Honest Provenance Labeling**: UI dynamically displays `🟢 LIVE NETWORK`, `🟡 CUSTOM IMPORT`, or `🟣 SIMULATED SCENARIO`. The platform never labels synthetic telemetry as live.
+
+---
+
+## 10. Project Structure
 
 ```
-NetCoopAI/
+TeamFusionNetCoopAI/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                     # FastAPI REST API & Ingestion handlers
 │   │   ├── protocol/
-│   │   │   ├── schema.py               # Canonical Pydantic schemas (AgentMessage, Telemetry)
+│   │   │   ├── schema.py               # Canonical Pydantic schemas (AgentMessage, Telemetry, Twin, Simulator)
 │   │   │   └── normalizer.py           # Unit normalizer, protocol validator, CSV/JSON parser
 │   │   ├── agents/
 │   │   │   ├── base_agent.py           # Abstract Base Agent lifecycle & bus
@@ -238,38 +293,65 @@ NetCoopAI/
 │   │   │   ├── correlation_agent.py    # Cross-examination, hypotheses, conflict resolution
 │   │   │   └── recommendation_agent.py # Remediation runbooks, canonical JSON report
 │   │   ├── orchestrator/
-│   │   │   └── engine.py               # Orchestration engine & execution tracing
+│   │   │   ├── engine.py               # Orchestration engine, timeline events & explanation
+│   │   │   └── store.py                # File-backed investigation persistence store
+│   │   ├── intelligence/
+│   │   │   ├── proactive_predictor.py  # Trend analysis & pre-breach warnings
+│   │   │   ├── cross_correlator.py     # Cross-incident upstream choke-point correlation
+│   │   │   └── health_scorer.py        # Explainable point-deduction health audit
+│   │   ├── integrations/
+│   │   │   ├── models.py               # Source configs, validation, write-only credentials
+│   │   │   ├── manager.py              # Persistent registry, live tests, diagnosis dispatch
+│   │   │   └── adapters/               # Modular adapters: Ping, Host, RESTCONF, SNMP, Syslog
+│   │   ├── simulator/
+│   │   │   ├── twin.py                 # Network digital twin, health index & SLA bounds
+│   │   │   ├── engine.py               # Deterministic What-If simulator & strategy comparison
+│   │   │   └── prioritizer.py          # Multi-incident operational triage engine
 │   │   └── scenarios/
-│   │       └── generator.py            # 8 benchmark scenarios, topology, CSV/JSON exporter
+│   │       └── generator.py            # 9 benchmark scenarios, topology, CSV/JSON exporter
 │   ├── tests/
 │   │   ├── test_protocol.py            # Protocol & schema unit tests
 │   │   ├── test_agents.py              # Domain agent tests
 │   │   ├── test_fault_resolution.py    # Inter-agent communication & conflict resolution
-│   │   ├── test_scenarios.py           # All 8 benchmark scenario tests
+│   │   ├── test_investigation_replay.py# Investigation timeline, store, & reasoning tests
+│   │   ├── test_simulation.py          # Digital Twin, What-If simulation & prioritization tests
+│   │   ├── test_intelligence.py        # Proactive prediction, correlation, & health tests
+│   │   ├── test_scenarios.py           # All 9 benchmark scenario tests
 │   │   └── test_api.py                 # FastAPI integration tests
+│   ├── test_browser_flow.py            # End-to-end Playwright headless 19-step verification
+│   ├── verify_all_scenarios.py         # Automated API verification for all 9 scenarios
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── Header.jsx              # NOC header & action buttons
-│   │   │   ├── NetworkTopology.jsx     # React Flow interactive graph with pulsing alert nodes
+│   │   │   ├── CommandCenterView.jsx   # Autonomous NOC Command Center (Executive Cockpit)
+│   │   │   ├── NetworkIntegrationsView.jsx # Live telemetry adapters & source dashboard
+│   │   │   ├── NetworkTopology.jsx     # React Flow graph, fault propagation, agent badges
+│   │   │   ├── DeviceDetailsModal.jsx  # Interactive observed vs baseline SLA telemetry drawer
+│   │   │   ├── InvestigationReplay.jsx # Autonomous investigation scrubber & playback engine
+│   │   │   ├── DigitalTwinView.jsx     # Full digital twin view, dependencies & health gauges
+│   │   │   ├── WhatIfSimulator.jsx     # What-If simulator & side-by-side strategy matrix
+│   │   │   ├── IncidentPrioritizer.jsx # Multi-incident operational queue (P1-P4)
+│   │   │   ├── FaultInjectionStudio.jsx# Interactive scenario builder & telemetry sliders
 │   │   │   ├── TelemetryCharts.jsx     # Recharts multi-tab metrics (latency, drops, CPU, RF)
 │   │   │   ├── AgentActivityPanel.jsx  # Animated 5-agent swarm activity cards
 │   │   │   ├── InterAgentMessageLog.jsx# Canonical protocol message stream & JSON inspector
-│   │   │   ├── RootCausePanel.jsx      # Diagnosis, confidence gauge & remediation runbooks
+│   │   │   ├── RootCausePanel.jsx      # Diagnosis, explanation ("Why did agents reach this?"), runbooks
 │   │   │   ├── EvidenceCards.jsx       # Structured evidence artifacts ledger
-│   │   │   ├── ScenarioSelector.jsx    # 8 benchmark scenarios & CSV/JSON custom upload
+│   │   │   ├── ScenarioSelector.jsx    # 9 benchmark scenarios & CSV/JSON custom upload
 │   │   │   ├── JsonReportModal.jsx     # Copyable/downloadable canonical JSON report viewer
 │   │   │   ├── ProtocolValidationTester.jsx # Interactive Pydantic protocol validator
 │   │   │   └── DiagnosticHistory.jsx   # Timeline of session diagnosis runs
 │   │   ├── api/
 │   │   │   └── client.js               # Frontend API client
-│   │   ├── App.jsx                     # Master dashboard layout
+│   │   ├── App.jsx                     # Master dashboard layout & view switcher
 │   │   ├── index.css                   # Tailwind NOC theme & keyframe glow animations
 │   │   └── main.jsx                    # React entry point
 │   ├── package.json
 │   ├── vite.config.js
 │   └── tailwind.config.js
+├── DEMO_GUIDE.md                       # Complete 4-minute pitch playbook & presentation guide
 ├── README.md                           # Comprehensive documentation & evaluation guide
 └── start.bat                           # Windows one-click startup launcher
 ```

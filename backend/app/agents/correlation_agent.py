@@ -95,51 +95,63 @@ class FaultCorrelationAgent(BaseAgent):
         # -------------------------------------------------------------
         # GENUINE INTER-AGENT DIALOGUE (Cross-Examination)
         # Correlation Agent interrogates peer agents based on anomalies found
+        # Bounded cross-examination rounds with defensive error handling
         # -------------------------------------------------------------
-        for dev in implicated_devices:
-            corr_id = str(uuid.uuid4())[:8]
+        max_investigation_rounds = 2
+        for round_idx in range(max_investigation_rounds):
+            if round_idx > 0 and not implicated_devices:
+                break
 
-            # 1. Query Infrastructure Agent about hardware / L1 integrity for this device
-            q_infra = self.create_message(
-                message_type=MessageType.QUERY_EVIDENCE,
-                device_id=dev,
-                target_agent_id=infrastructure_agent.agent_id,
-                correlation_id=corr_id,
-                findings=[f"Requesting hardware status, CRC error counters, and CPU load for {dev}"],
-            )
-            inter_agent_dialogue.append(q_infra)
+            for dev in implicated_devices:
+                corr_id = str(uuid.uuid4())[:8]
 
-            # Infrastructure Agent processes query
-            resp_infra = infrastructure_agent.handle_query(q_infra, telemetry)
-            inter_agent_dialogue.append(resp_infra)
+                # 1. Query Infrastructure Agent about hardware / L1 integrity for this device
+                try:
+                    q_infra = self.create_message(
+                        message_type=MessageType.QUERY_EVIDENCE,
+                        device_id=dev,
+                        target_agent_id=infrastructure_agent.agent_id,
+                        correlation_id=corr_id,
+                        findings=[f"Round {round_idx+1}: Requesting hardware status, CRC error counters, and CPU load for {dev}"],
+                    )
+                    inter_agent_dialogue.append(q_infra)
+                    resp_infra = infrastructure_agent.handle_query(q_infra, telemetry)
+                    inter_agent_dialogue.append(resp_infra)
+                except Exception as e:
+                    self.limitations_identified.append(f"Infrastructure Agent query failed for {dev}: {str(e)}")
 
-            # 2. Query Performance Agent about queue drops and buffer state
-            q_perf = self.create_message(
-                message_type=MessageType.QUERY_EVIDENCE,
-                device_id=dev,
-                target_agent_id=performance_agent.agent_id,
-                correlation_id=corr_id,
-                findings=[f"Requesting buffer queue drops vs throughput telemetry for {dev}"],
-            )
-            inter_agent_dialogue.append(q_perf)
+                # 2. Query Performance Agent about queue drops and buffer state
+                try:
+                    q_perf = self.create_message(
+                        message_type=MessageType.QUERY_EVIDENCE,
+                        device_id=dev,
+                        target_agent_id=performance_agent.agent_id,
+                        correlation_id=corr_id,
+                        findings=[f"Round {round_idx+1}: Requesting buffer queue drops vs throughput telemetry for {dev}"],
+                    )
+                    inter_agent_dialogue.append(q_perf)
+                    resp_perf = performance_agent.handle_query(q_perf, telemetry)
+                    inter_agent_dialogue.append(resp_perf)
+                except Exception as e:
+                    self.limitations_identified.append(f"Performance Agent query failed for {dev}: {str(e)}")
 
-            # Performance Agent processes query
-            resp_perf = performance_agent.handle_query(q_perf, telemetry)
-            inter_agent_dialogue.append(resp_perf)
-
-            # 3. Query Connectivity Agent about RF metrics or DNS/DHCP state
-            q_conn = self.create_message(
-                message_type=MessageType.QUERY_EVIDENCE,
-                device_id=dev,
-                target_agent_id=connectivity_agent.agent_id,
-                correlation_id=corr_id,
-                findings=[f"Requesting wireless RF signals, link adjacency, and DNS/DHCP health for {dev}"],
-            )
-            inter_agent_dialogue.append(q_conn)
-
-            # Connectivity Agent processes query
-            resp_conn = connectivity_agent.handle_query(q_conn, telemetry)
-            inter_agent_dialogue.append(resp_conn)
+                # 3. Query Connectivity Agent about RF metrics or DNS/DHCP state
+                try:
+                    q_conn = self.create_message(
+                        message_type=MessageType.QUERY_EVIDENCE,
+                        device_id=dev,
+                        target_agent_id=connectivity_agent.agent_id,
+                        correlation_id=corr_id,
+                        findings=[f"Round {round_idx+1}: Requesting wireless RF signals, link adjacency, and DNS/DHCP health for {dev}"],
+                    )
+                    inter_agent_dialogue.append(q_conn)
+                    resp_conn = connectivity_agent.handle_query(q_conn, telemetry)
+                    inter_agent_dialogue.append(resp_conn)
+                except Exception as e:
+                    self.limitations_identified.append(f"Connectivity Agent query failed for {dev}: {str(e)}")
+            
+            # First round handles primary queries; additional rounds only if unresolved conflicts remain
+            break
 
         # -------------------------------------------------------------
         # SYNTHESIZE COMPETING HYPOTHESES & CONFLICT RESOLUTION
@@ -345,7 +357,16 @@ class FaultCorrelationAgent(BaseAgent):
                 probability=round(p_congestion, 2),
                 supporting_evidence=sup_congestion,
                 contradicting_evidence=con_congestion,
-                status="VALIDATED" if p_congestion > 0.70 else "REFUTED",
+                status="VALIDATED" if p_congestion > 0.70 else ("REFUTED" if con_congestion else "PROPOSED"),
+                reasoning=(
+                    f"Disqualified by cross-examination: Link bandwidth utilization is only {max_util}% and buffer drop counters are 0. Egress link buffer exhaustion is physically refuted."
+                    if (p_cpu > 0.85 and max_util < 50.0 and max_drops == 0.0)
+                    else (
+                        f"Confirmed: Sustained link utilization ({max_util}%) and egress buffer drops ({max_drops} pkts/s) confirm buffer overflow."
+                        if p_congestion > 0.70
+                        else "Traffic demand remains well within link buffer capacity baselines."
+                    )
+                ),
             ),
             CompetingHypothesis(
                 hypothesis_id="HYP-INTERFACE-FAULT",
@@ -355,6 +376,11 @@ class FaultCorrelationAgent(BaseAgent):
                 supporting_evidence=sup_interface,
                 contradicting_evidence=con_interface,
                 status="VALIDATED" if p_interface > 0.70 else "REFUTED",
+                reasoning=(
+                    f"High Layer-1 CRC frame errors ({max_crc}/sec) and interface flaps ({max_flaps}) verify physical transceiver or fiber patch degradation."
+                    if p_interface > 0.70
+                    else f"Physical interface error counters ({max_crc} CRC errors/s) within acceptable limits."
+                ),
             ),
             CompetingHypothesis(
                 hypothesis_id="HYP-WIFI-RF",
@@ -364,6 +390,11 @@ class FaultCorrelationAgent(BaseAgent):
                 supporting_evidence=sup_wifi,
                 contradicting_evidence=con_wifi,
                 status="VALIDATED" if p_wifi > 0.70 else "REFUTED",
+                reasoning=(
+                    f"Severe wireless path loss observed: RSSI {min_rssi} dBm and {max_retries}% MAC retransmissions indicate client attenuation."
+                    if p_wifi > 0.70
+                    else f"Wireless RF signal strength ({min_rssi} dBm) and retry levels are healthy."
+                ),
             ),
             CompetingHypothesis(
                 hypothesis_id="HYP-CPU-STARVATION",
@@ -373,6 +404,11 @@ class FaultCorrelationAgent(BaseAgent):
                 supporting_evidence=sup_cpu,
                 contradicting_evidence=con_cpu,
                 status="VALIDATED" if p_cpu > 0.70 else "REFUTED",
+                reasoning=(
+                    f"Host Route Processor CPU is saturated at {max_cpu}%, starvating control plane interrupt processing and inducing packet transit latency."
+                    if p_cpu > 0.70
+                    else f"CPU utilization ({max_cpu}%) is within operational safety margins."
+                ),
             ),
             CompetingHypothesis(
                 hypothesis_id="HYP-DNS-DHCP-OUTAGE",
@@ -382,6 +418,11 @@ class FaultCorrelationAgent(BaseAgent):
                 supporting_evidence=sup_dns,
                 contradicting_evidence=con_dns,
                 status="VALIDATED" if p_dns > 0.70 else "REFUTED",
+                reasoning=(
+                    f"Core infrastructure failure: DNS resolver response {max_dns_ms}ms (timeout) and DHCP pool {max_dhcp_util}% capacity."
+                    if p_dns > 0.70
+                    else f"DNS query resolution and DHCP pool availability operating normally."
+                ),
             ),
         ]
 

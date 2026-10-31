@@ -17,6 +17,9 @@ from app.protocol.schema import (
     EvidenceItem,
     RemediationAction,
     CanonicalDiagnosticReport,
+    InvestigationExplanation,
+    AgentInvestigationTrace,
+    ProactiveRiskWarning,
     TelemetryRecord,
 )
 
@@ -65,6 +68,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="LOW",
                     rationale="All telemetry signals are within normal operating bounds. No corrective action required.",
                     rollback_plan="N/A",
+                    expected_outcome="Telemetry metrics remain verified within baselines (latency < 5ms, loss 0%).",
                 )
             )
             return actions
@@ -80,6 +84,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="LOW",
                     rationale="Verify buffer queue depth and discard counters on congested egress interface.",
                     rollback_plan="No state change",
+                    expected_outcome="Pinpoints active drop rate and buffer memory occupancy on congested egress interface.",
                 ),
                 RemediationAction(
                     step=2,
@@ -89,6 +94,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="MEDIUM",
                     rationale="Throttles bulk backups and elephant flows to prevent buffer overflow for latency-critical traffic.",
                     rollback_plan="no policy-map SHAPE-BULK-TRAFFIC",
+                    expected_outcome="Reduces link utilization from 98% to < 75%, eliminating egress queue discards.",
                 ),
                 RemediationAction(
                     step=3,
@@ -98,6 +104,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="MEDIUM",
                     rationale="Doubles inter-switch bandwidth from 1 Gbps to 2 Gbps using aggregated secondary trunk.",
                     rollback_plan="lacp max-bundle 2",
+                    expected_outcome="Doubles trunk bandwidth headroom to 2 Gbps, reducing transit latency from 142ms to < 10ms.",
                 ),
             ])
 
@@ -112,6 +119,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="LOW",
                     rationale="Determine if laser optical power levels (dBm) have dropped below receiver sensitivity limit.",
                     rollback_plan="Read-only diagnostic",
+                    expected_outcome="Quantifies optical attenuation; confirms SFP RX power degradation below receiver sensitivity threshold.",
                 ),
                 RemediationAction(
                     step=2,
@@ -121,6 +129,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="MEDIUM",
                     rationale="Immediately divert user packets away from degraded link to eliminate ongoing packet discards.",
                     rollback_plan="standby 10 priority 100",
+                    expected_outcome="Immediately redirects packet transit across redundant link, terminating ongoing frame discards.",
                 ),
                 RemediationAction(
                     step=3,
@@ -130,6 +139,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="HIGH",
                     rationale="Physical hardware repair required to clear CRC frame corruption.",
                     rollback_plan="Retain swapped hardware for RMA inspection",
+                    expected_outcome="Restores clean optical transceiver link with 0 CRC errors/sec and zero link flapping.",
                 ),
             ])
 
@@ -144,6 +154,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="MEDIUM",
                     rationale="Boosts signal strength by +4 dBm to improve SNR above 20 dB margin and reduce 802.11 retries.",
                     rollback_plan="ap name AP-02 dot11 5ghz txpower auto",
+                    expected_outcome="Improves client RSSI from -86.5 dBm to > -68 dBm and lifts SNR above 25 dB margin.",
                 ),
                 RemediationAction(
                     step=2,
@@ -153,6 +164,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="LOW",
                     rationale="Steers sticky edge clients experiencing -85 dBm attenuation to adjacent Access Point with -58 dBm RSSI.",
                     rollback_plan="wireless client steer disable",
+                    expected_outcome="Roams client to AP-01, cutting 802.11 frame retransmissions from 42% down to < 5%.",
                 ),
             ])
 
@@ -167,6 +179,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="LOW",
                     rationale="Identify whether CPU spike is driven by BGP routing churn, ARP broadcast storms, or memory leaks.",
                     rollback_plan="Read-only diagnostic",
+                    expected_outcome="Pinpoints rogue process or protocol storm consuming 99.4% CPU Route Processor interrupts.",
                 ),
                 RemediationAction(
                     step=2,
@@ -176,6 +189,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="HIGH",
                     rationale="Protects the router Route Processor by hardware-policing unclassified broadcast/control packets.",
                     rollback_plan="no service-policy input COPP-PROTECT-STORM",
+                    expected_outcome="Hardware rate-limits control plane storm; drops router CPU from 99.4% to < 25% and restores transit packet latency to < 5ms.",
                 ),
             ])
 
@@ -190,6 +204,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="MEDIUM",
                     rationale="Directs network lookups to redundant standby resolver, restoring immediate domain resolution.",
                     rollback_plan="ip name-server 10.0.0.53",
+                    expected_outcome="Restores domain name resolution latency from 3250ms (timeout) down to < 15ms.",
                 ),
                 RemediationAction(
                     step=2,
@@ -199,6 +214,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="MEDIUM",
                     rationale="Frees depleted IP address pools and restores name daemon responsiveness.",
                     rollback_plan="systemctl restart named",
+                    expected_outcome="Reclaims exhausted lease table and restores DHCP address pool headroom to > 40% capacity.",
                 ),
             ])
 
@@ -213,6 +229,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="LOW",
                     rationale="Restore missing telemetry dimensions before applying corrective operational changes.",
                     rollback_plan="No state change",
+                    expected_outcome="Restores missing telemetry dimensions (CPU, queue drops, CRC errors) from unmonitored node.",
                 ),
                 RemediationAction(
                     step=2,
@@ -222,6 +239,7 @@ class RecommendationAgent(BaseAgent):
                     risk_level="LOW",
                     rationale="Collect auxiliary hop-by-hop latency and loss measurements.",
                     rollback_plan="N/A",
+                    expected_outcome="Provides hop-by-hop latency and packet loss ground truth.",
                 ),
             ])
 
@@ -240,6 +258,13 @@ class RecommendationAgent(BaseAgent):
         limitations: List[str],
         execution_time_ms: float,
         inter_agent_messages_count: int,
+        fault_propagation_paths: Optional[List[List[str]]] = None,
+        missing_telemetry: Optional[List[str]] = None,
+        confidence_calculation_method: Optional[str] = None,
+        investigation_explanation: Optional[InvestigationExplanation] = None,
+        investigation_trace: Optional[AgentInvestigationTrace] = None,
+        proactive_warnings: Optional[List[ProactiveRiskWarning]] = None,
+        telemetry_origin: str = "SIMULATED",
     ) -> CanonicalDiagnosticReport:
         """
         Produces the official standardized CanonicalDiagnosticReport matching problem statement.
@@ -253,20 +278,31 @@ class RecommendationAgent(BaseAgent):
             hypotheses=alternative_causes,
         )
 
+        primary_hyp = alternative_causes[0] if alternative_causes else None
+
         report = CanonicalDiagnosticReport(
             incident_id=incident_id,
+            investigation_id=incident_id,
             timestamp=datetime.now(timezone.utc).isoformat(),
             status=status,
             suspected_root_cause=root_cause,
             confidence=round(confidence, 4),
+            confidence_calculation_method=confidence_calculation_method or "Weighted Multi-Agent Anomaly Scoring & Bayesian Evidence Synthesis",
             affected_devices=affected_devices,
             supporting_evidence=supporting_evidence,
             alternative_causes=alternative_causes,
+            primary_hypothesis=primary_hyp,
+            fault_propagation_paths=fault_propagation_paths or [],
+            missing_telemetry=missing_telemetry or [],
             recommended_actions=remediation_actions,
+            investigation_explanation=investigation_explanation,
+            investigation_trace=investigation_trace,
+            proactive_warnings=proactive_warnings or [],
             evidence_sources=evidence_sources,
             limitations=limitations,
             execution_time_ms=round(execution_time_ms, 2),
             inter_agent_messages_count=inter_agent_messages_count,
+            telemetry_origin=telemetry_origin,
         )
 
         # Emit completion message

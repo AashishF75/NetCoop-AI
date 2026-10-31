@@ -1,6 +1,6 @@
 """
 Scenario Generator for NetCoop AI.
-Generates reproducible network topology and telemetry datasets for the 8 hackathon benchmark scenarios:
+Generates reproducible network topology and telemetry datasets for the 9 hackathon benchmark scenarios:
 1. Normal network
 2. Link congestion
 3. Weak Wi-Fi signal
@@ -9,6 +9,7 @@ Generates reproducible network topology and telemetry datasets for the 8 hackath
 6. Missing telemetry
 7. Incompatible agent messages
 8. Conflicting diagnostic evidence
+9. Shared upstream fault & cross-incident correlation
 """
 
 from typing import Dict, Any, List, Tuple
@@ -159,6 +160,14 @@ class ScenarioCatalog:
                 "severity": "CRITICAL",
                 "description": "Latency spike mimics congestion, but link utilization is 14% and router CPU is 99.4%.",
                 "expected_root_cause": "Control Plane Processor Saturation",
+            },
+            {
+                "id": "shared_upstream_fault",
+                "name": "Scenario 9: Shared Upstream Fault & Cross-Incident Correlation",
+                "category": "Cross-Incident Correlation",
+                "severity": "CRITICAL",
+                "description": "Multiple downstream nodes (Edge-01, Edge-02, AP-01) report cascaded latency & loss caused by single upstream Agg-Switch-01 optic degradation.",
+                "expected_root_cause": "Physical Link / Transceiver Integrity Fault",
             },
         ]
 
@@ -533,6 +542,101 @@ class ScenarioCatalog:
                     queue_drops_per_sec=0.0,
                     cpu_utilization_pct=21.0,
                     interface_crc_errors=0,
+                ),
+            ]
+
+        # -------------------------------------------------------------
+        # 9. SHARED UPSTREAM FAULT (Cross-Incident Correlation)
+        # -------------------------------------------------------------
+        elif scenario_id == "shared_upstream_fault":
+            return [
+                TelemetryRecord(
+                    device_id="Core-Router-01",
+                    device_type="router",
+                    device_status="UP",
+                    latency_ms=2.2,
+                    jitter_ms=0.5,
+                    packet_loss_pct=0.0,
+                    throughput_mbps=280.0,
+                    bandwidth_mbps=10000.0,
+                    utilization_pct=2.8,
+                    queue_drops_per_sec=0.0,
+                    cpu_utilization_pct=19.0,
+                    memory_utilization_pct=35.0,
+                    interface_crc_errors=0,
+                    interface_flaps=0,
+                ),
+                TelemetryRecord(
+                    device_id="Agg-Switch-01",
+                    device_type="switch",
+                    device_status="DEGRADED",
+                    latency_ms=45.0,
+                    jitter_ms=18.5,
+                    packet_loss_pct=7.5,
+                    throughput_mbps=450.0,
+                    bandwidth_mbps=10000.0,
+                    utilization_pct=42.0,
+                    queue_drops_per_sec=12.0,
+                    cpu_utilization_pct=68.0,
+                    memory_utilization_pct=62.0,
+                    interface_crc_errors=820,   # Heavy physical CRC errors on trunk transceiver!
+                    interface_flaps=3,
+                ),
+                TelemetryRecord(
+                    device_id="Edge-Switch-01",
+                    device_type="switch",
+                    device_status="DEGRADED",
+                    latency_ms=68.5,           # Cascaded latency from Agg-Switch-01
+                    jitter_ms=22.0,
+                    packet_loss_pct=6.2,
+                    throughput_mbps=65.0,
+                    bandwidth_mbps=1000.0,
+                    utilization_pct=15.0,
+                    queue_drops_per_sec=0.0,   # Local queue drops zero!
+                    cpu_utilization_pct=22.0,  # Local CPU normal!
+                    memory_utilization_pct=31.0,
+                    interface_crc_errors=0,    # Local interface has NO CRC errors!
+                    interface_flaps=0,
+                ),
+                TelemetryRecord(
+                    device_id="Edge-Switch-02",
+                    device_type="switch",
+                    device_status="DEGRADED",
+                    latency_ms=71.0,           # Cascaded latency from Agg-Switch-01
+                    jitter_ms=24.5,
+                    packet_loss_pct=5.9,
+                    throughput_mbps=88.0,
+                    bandwidth_mbps=1000.0,
+                    utilization_pct=18.0,
+                    queue_drops_per_sec=0.0,   # Local queue drops zero
+                    cpu_utilization_pct=24.0,  # Local CPU normal
+                    memory_utilization_pct=34.0,
+                    interface_crc_errors=0,    # Local interface normal
+                    interface_flaps=0,
+                ),
+                TelemetryRecord(
+                    device_id="AP-01",
+                    device_type="ap",
+                    device_status="DEGRADED",
+                    latency_ms=78.0,           # High upstream latency
+                    jitter_ms=26.0,
+                    packet_loss_pct=6.8,
+                    wifi_rssi_dbm=-60.0,       # RF signal is completely FINE (-60 dBm)!
+                    wifi_snr_db=30.0,          # RF SNR is FINE (30 dB)!
+                    wifi_retry_pct=3.1,        # Not RF loss
+                    cpu_utilization_pct=28.0,
+                ),
+                TelemetryRecord(
+                    device_id="DNS-Server-01",
+                    device_type="server",
+                    device_status="UP",
+                    latency_ms=72.0,
+                    jitter_ms=20.0,
+                    packet_loss_pct=5.5,
+                    dns_response_ms=75.0,      # High DNS response purely due to upstream network loss
+                    dhcp_pool_utilization_pct=44.0,
+                    cpu_utilization_pct=22.0,
+                    memory_utilization_pct=46.0,
                 ),
             ]
 

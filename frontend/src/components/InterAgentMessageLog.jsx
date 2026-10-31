@@ -49,7 +49,9 @@ export default function InterAgentMessageLog({ messages = [] }) {
   });
 
   const handleCopy = (msg, idx) => {
-    navigator.clipboard.writeText(JSON.stringify(msg, null, 2));
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(JSON.stringify(msg, null, 2)).catch(() => {});
+    }
     setCopiedIndex(idx);
     setTimeout(() => setCopiedIndex(null), 1800);
   };

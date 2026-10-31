@@ -1,0 +1,46 @@
+# Render Blueprint for NetCoop AI - Multi-Agent Network Fault Diagnosis Platform
+# Hosts the FastAPI multi-agent backend and the React+Vite NOC operations dashboard.
+
+services:
+  # -------------------------------------------------------------
+  # Backend Web Service: FastAPI Multi-Agent Engine & Collector Hub
+  # -------------------------------------------------------------
+  - type: web
+    name: netcoop-ai-backend
+    runtime: python
+    region: oregon
+    plan: starter
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: PYTHONPATH
+        value: .
+      - key: ENVIRONMENT
+        value: production
+      - key: NETCOOP_DATA_DIR
+        value: /data
+    # Note: If deploying on Render Free Tier, change plan to "free" and remove the disk block below.
+    disk:
+      name: netcoop-data
+      mountPath: /data
+      sizeGB: 1
+
+  # -------------------------------------------------------------
+  # Frontend Static Site: React + Vite NOC Operations Center
+  # -------------------------------------------------------------
+  - type: web
+    name: netcoop-ai-frontend
+    runtime: static
+    region: oregon
+    buildCommand: "cd frontend && npm install && npm run build"
+    staticPublishPath: "./frontend/dist"
+    envVars:
+      - key: VITE_API_URL
+        value: https://netcoop-ai-backend.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+

@@ -5,6 +5,7 @@ import { Activity, ShieldCheck, Play, FileJson, Cpu, Layers, RefreshCw } from 'l
 export default function Header({
   status,
   incidentId,
+  telemetryOrigin = 'SIMULATED',
   isDiagnosing,
   onRunDiagnosis,
   onOpenReport,
@@ -52,6 +53,28 @@ export default function Header({
 
         {/* Live System Badges */}
         <div className="hidden lg:flex items-center gap-3 text-xs font-mono">
+          {telemetryOrigin === 'LIVE_DEVICE' ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold shadow-sm shadow-emerald-900/30">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>LIVE DEVICE</span>
+            </div>
+          ) : telemetryOrigin === 'LIVE_HOST' || telemetryOrigin === 'LIVE' ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-500/40 text-xs font-bold">
+              <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+              <span>LIVE HOST PROBE</span>
+            </div>
+          ) : telemetryOrigin === 'CUSTOM_IMPORT' ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold">
+              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+              <span>CUSTOM IMPORT</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/40 text-xs font-bold">
+              <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+              <span>SIMULATED SCENARIO</span>
+            </div>
+          )}
+
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#111726] border border-[#1f293d]">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
             <span className="text-slate-400">Protocol:</span>

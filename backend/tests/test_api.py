@@ -38,7 +38,7 @@ def test_api_scenarios_list():
     res = client.get("/api/scenarios")
     assert res.status_code == 200
     scenarios = res.json()
-    assert len(scenarios) == 8
+    assert len(scenarios) >= 8  # 8 benchmark scenarios + scenario 9 upstream correlation
 
 
 def test_api_scenario_telemetry():
