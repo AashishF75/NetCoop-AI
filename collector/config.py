@@ -53,6 +53,7 @@ class DeviceProtocol(str, Enum):
     TCP_PROBE = "TCP_PROBE"
     SYSLOG = "SYSLOG"
     WIFI_CONTROLLER = "WIFI_CONTROLLER"
+    HOST_METRICS = "HOST_METRICS"
 
 
 class LocalDeviceConfig(BaseModel):

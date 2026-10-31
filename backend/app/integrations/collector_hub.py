@@ -384,9 +384,14 @@ class CollectorHub:
         if req.metrics_unsupported:
             device.metrics_unsupported = req.metrics_unsupported
 
-        # Tag each record with LIVE_DEVICE provenance
+        # Tag each record with appropriate live provenance (LIVE_HOST vs LIVE_DEVICE)
         for r in req.records:
-            r.telemetry_origin = "LIVE_DEVICE"
+            if getattr(r, "telemetry_origin", None) in ("LIVE_HOST", "LIVE_DEVICE"):
+                pass  # Preserve genuine provenance
+            elif getattr(device, "protocol", "") == "HOST_METRICS" or getattr(device, "device_type", "") == "server":
+                r.telemetry_origin = "LIVE_HOST"
+            else:
+                r.telemetry_origin = "LIVE_DEVICE"
             r.source_id = f"col:{req.collector_id}:dev:{req.device_id}"
 
         self._telemetry_cache[req.device_id] = req.records

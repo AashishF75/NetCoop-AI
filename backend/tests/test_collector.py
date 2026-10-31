@@ -15,6 +15,7 @@ from app.protocol.schema import TelemetryRecord
 from collector.config import LocalDeviceConfig, DeviceProtocol
 from collector.adapters.reachability_probe import probe_tcp_reachability
 from collector.adapters.syslog_receiver import SyslogServer
+from collector.adapters.host_metrics import poll_host_metrics
 
 client = TestClient(app)
 
@@ -315,4 +316,88 @@ def test_syslog_server_parser():
     assert any(r.cpu_utilization_pct == 96.0 for r in recs)
     for r in recs:
         assert r.telemetry_origin == "LIVE_DEVICE"
+
+
+@pytest.mark.asyncio
+async def test_host_metrics_adapter():
+    """Tests collector's native host OS metrics adapter for authentic CPU and memory counters."""
+    dev = LocalDeviceConfig(
+        device_id="HOST-TEST-01",
+        name="Host Appliance Test",
+        host="127.0.0.1",
+        port=8000,
+        protocol=DeviceProtocol.HOST_METRICS,
+        timeout_sec=1.0,
+    )
+    records, avail, unsupp = await poll_host_metrics(dev)
+    assert len(records) == 1
+    rec = records[0]
+    assert rec.telemetry_origin == "LIVE_HOST"
+    assert rec.device_type == "server"
+    assert 0.0 <= rec.cpu_utilization_pct <= 100.0
+    assert 0.0 <= rec.memory_utilization_pct <= 100.0
+    assert "cpu_utilization_pct" in avail
+    assert "memory_utilization_pct" in avail
+    assert "wifi_rssi_dbm" in unsupp
+
+
+def test_collector_host_telemetry_provenance_and_diagnosis():
+    """
+    Tests that host telemetry pushed by collector maintains LIVE_HOST provenance
+    throughout the 5-agent diagnosis pipeline.
+    """
+    # 1. Enroll and pair collector
+    enroll_resp = client.post("/api/collectors/enroll", json={"name": "Host-Collector"})
+    col_id = enroll_resp.json()["collector_id"]
+    token = enroll_resp.json()["enrollment_token"]
+
+    reg_resp = client.post(
+        "/api/collectors/register",
+        json={
+            "collector_id": col_id,
+            "enrollment_token": token,
+            "hostname": "collector-host-box",
+            "local_ip": "127.0.0.1",
+            "os_type": "Windows 11",
+        },
+    )
+    sess_token = reg_resp.json()["session_token"]
+
+    # 2. Push genuine host telemetry record
+    hub = get_collector_hub()
+    hub._telemetry_cache.clear()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    host_record = TelemetryRecord(
+        timestamp=now_iso,
+        device_id="HOST-BOX-APP-01",
+        device_type="server",
+        device_status="UP",
+        cpu_utilization_pct=42.5,
+        memory_utilization_pct=65.2,
+        latency_ms=0.8,
+        packet_loss_pct=0.0,
+        telemetry_origin="LIVE_HOST",
+        custom_metrics={"os": "Windows 11"},
+    )
+
+    push_resp = client.post(
+        "/api/collectors/telemetry",
+        json={
+            "collector_id": col_id,
+            "session_token": sess_token,
+            "device_id": "HOST-BOX-APP-01",
+            "records": [host_record.model_dump()],
+            "metrics_available": ["cpu_utilization_pct", "memory_utilization_pct"],
+        },
+    )
+    assert push_resp.status_code == 200
+
+    # 3. Execute live diagnosis
+    diag_resp = client.post("/api/integrations/diagnose-live", json={})
+    assert diag_resp.status_code == 200
+    diag_data = diag_resp.json()
+    assert diag_data["success"] is True
+    assert diag_data["telemetry_origin"] == "LIVE_HOST"
+    assert "HOST-BOX-APP-01" in diag_data["devices_polled"]
+
 

@@ -1,0 +1,100 @@
+"""
+Start a background live collector for NetCoop AI.
+Enrolls with the local backend, registers host metrics and gateway probe,
+and streams live telemetry continuously.
+"""
+import sys
+import os
+import asyncio
+import socket
+import logging
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend")))
+
+import requests
+from collector.config import CollectorSettings, LocalDeviceConfig, DeviceProtocol, save_collector_config
+from collector.agent import NetworkCollectorAgent
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger("LiveCollectorRunner")
+
+BACKEND_URL = "http://127.0.0.1:8000"
+
+async def main():
+    hostname = socket.gethostname()
+    host_dev_id = f"HOST-{hostname[:12].upper()}"
+    gw_dev_id = "LAN-Gateway-01"
+
+    # Enroll
+    enroll_resp = requests.post(
+        f"{BACKEND_URL}/api/collectors/enroll",
+        json={"name": "Live-Edge-Collector", "backend_url": BACKEND_URL}
+    )
+    enroll_resp.raise_for_status()
+    enroll_data = enroll_resp.json()
+    collector_id = enroll_data["collector_id"]
+    token = enroll_data["enrollment_token"]
+    logger.info("Enrolled collector: %s", collector_id)
+
+    # Register devices on backend
+    requests.post(
+        f"{BACKEND_URL}/api/collectors/{collector_id}/devices",
+        json={
+            "device_id": host_dev_id,
+            "name": f"Collector Host Appliance ({hostname})",
+            "device_type": "server",
+            "ip": "127.0.0.1",
+            "port": 8000,
+            "protocol": "HOST_METRICS",
+        }
+    )
+    requests.post(
+        f"{BACKEND_URL}/api/collectors/{collector_id}/devices",
+        json={
+            "device_id": gw_dev_id,
+            "name": "Local Gateway Probe",
+            "device_type": "router",
+            "ip": "127.0.0.1",
+            "port": 8000,
+            "protocol": "TCP_PROBE",
+        }
+    )
+
+    settings = CollectorSettings(
+        backend_url=BACKEND_URL,
+        collector_id=collector_id,
+        collector_name="Live-Edge-Collector",
+        enrollment_token=token,
+        heartbeat_interval_sec=10,
+        devices=[
+            LocalDeviceConfig(
+                device_id=host_dev_id,
+                name=f"Collector Host Appliance ({hostname})",
+                device_type="server",
+                host="127.0.0.1",
+                port=8000,
+                protocol=DeviceProtocol.HOST_METRICS,
+                polling_interval_sec=10,
+            ),
+            LocalDeviceConfig(
+                device_id=gw_dev_id,
+                name="Local Gateway Probe",
+                device_type="router",
+                host="127.0.0.1",
+                port=8000,
+                protocol=DeviceProtocol.TCP_PROBE,
+                polling_interval_sec=10,
+            ),
+        ]
+    )
+
+    save_collector_config(settings)
+    agent = NetworkCollectorAgent(settings)
+    logger.info("Starting collector agent loops...")
+    await agent.start()
+    while True:
+        await asyncio.sleep(1)
+
+if __name__ == "__main__":
+    asyncio.run(main())

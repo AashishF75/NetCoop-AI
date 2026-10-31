@@ -6,6 +6,7 @@ from collector.adapters.snmp_poller import poll_snmp_device
 from collector.adapters.restconf_poller import poll_restconf_device
 from collector.adapters.syslog_receiver import SyslogServer
 from collector.adapters.wifi_poller import poll_wifi_controller
+from collector.adapters.host_metrics import poll_host_metrics
 
 __all__ = [
     "probe_tcp_reachability",
@@ -13,5 +14,6 @@ __all__ = [
     "poll_restconf_device",
     "SyslogServer",
     "poll_wifi_controller",
+    "poll_host_metrics",
 ]
 

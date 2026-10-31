@@ -16,6 +16,7 @@ from collector.adapters.snmp_poller import poll_snmp_device
 from collector.adapters.restconf_poller import poll_restconf_device
 from collector.adapters.syslog_receiver import SyslogServer
 from collector.adapters.wifi_poller import poll_wifi_controller
+from collector.adapters.host_metrics import poll_host_metrics
 
 logger = logging.getLogger("NetCoopCollector")
 
@@ -78,6 +79,8 @@ class NetworkCollectorAgent:
         try:
             if device.protocol == DeviceProtocol.TCP_PROBE:
                 records, avail, unsupp = await probe_tcp_reachability(device)
+            elif device.protocol == DeviceProtocol.HOST_METRICS:
+                records, avail, unsupp = await poll_host_metrics(device)
             elif device.protocol == DeviceProtocol.SNMP:
                 records, avail, unsupp = await poll_snmp_device(device)
             elif device.protocol == DeviceProtocol.RESTCONF:
@@ -157,6 +160,18 @@ class NetworkCollectorAgent:
         Starts the collector agent and background tasks.
         """
         self._running = True
+        if not self.settings.devices:
+            import socket
+            self.settings.devices.append(
+                LocalDeviceConfig(
+                    device_id=f"HOST-{socket.gethostname()[:12].upper()}",
+                    name=f"Collector Host Appliance ({socket.gethostname()})",
+                    device_type="server",
+                    host="127.0.0.1",
+                    port=8000,
+                    protocol=DeviceProtocol.HOST_METRICS,
+                )
+            )
         await self.pair_if_needed()
         await self.syslog_server.start()
 

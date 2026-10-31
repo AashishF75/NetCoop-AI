@@ -60,18 +60,28 @@ async def main():
     if args.syslog_port:
         settings.syslog_port = args.syslog_port
 
-    # If no devices configured, seed a default local gateway reachability probe
+    # If no devices configured, seed default genuine local host and gateway reachability probes
     if not settings.devices:
+        import socket
+        host_device = LocalDeviceConfig(
+            device_id=f"HOST-{socket.gethostname()[:12].upper()}",
+            name=f"Collector Host Appliance ({socket.gethostname()})",
+            device_type="server",
+            host="127.0.0.1",
+            protocol=DeviceProtocol.HOST_METRICS,
+            port=8000,
+            polling_interval_sec=15,
+        )
         default_device = LocalDeviceConfig(
             device_id="LAN-Gateway-01",
-            name="Default Local Gateway",
+            name="Default Local Gateway Probe",
             device_type="router",
             host="127.0.0.1",
             protocol=DeviceProtocol.TCP_PROBE,
-            port=80,
+            port=8000,
             polling_interval_sec=15,
         )
-        settings.devices.append(default_device)
+        settings.devices.extend([host_device, default_device])
 
     save_collector_config(settings)
 

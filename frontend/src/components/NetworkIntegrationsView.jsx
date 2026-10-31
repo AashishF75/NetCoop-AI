@@ -1018,13 +1018,21 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
                     onChange={(e) => {
                       const proto = e.target.value;
                       let p = 80;
+                      let dType = newDevice.device_type;
+                      let ip = newDevice.ip;
                       if (proto === 'SNMP') p = 161;
                       else if (proto === 'RESTCONF') p = 443;
-                      setNewDevice({ ...newDevice, protocol: proto, port: p });
+                      else if (proto === 'HOST_METRICS') {
+                        p = 8000;
+                        dType = 'server';
+                        ip = '127.0.0.1';
+                      }
+                      setNewDevice({ ...newDevice, protocol: proto, port: p, device_type: dType, ip: ip });
                     }}
                     className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-100"
                   >
                     <option value="TCP_PROBE">TCP Probe</option>
+                    <option value="HOST_METRICS">Host OS Metrics (CPU/RAM/NIC)</option>
                     <option value="SNMP">SNMP v2c/v3</option>
                     <option value="RESTCONF">RESTCONF / REST</option>
                     <option value="WIFI_CONTROLLER">Wi-Fi Controller</option>
