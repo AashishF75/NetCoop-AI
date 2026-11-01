@@ -250,6 +250,38 @@ export default function TelemetryCharts({ telemetry = [], telemetryOrigin, canon
         </div>
       </div>
 
+      {/* Target Node, Incident ID, Provenance & Timestamp Status Banner */}
+      <div className="flex flex-wrap items-center justify-between text-xs font-mono bg-[#090d16] px-3.5 py-2 rounded-xl border border-[#1b2538] text-slate-400">
+        <div className="flex items-center gap-2">
+          <span className="text-slate-500">Target Node:</span>
+          <span className="text-white font-bold">{telemetry[0]?.device_id || 'Unknown'}</span>
+          {telemetry[0]?.custom_metrics?.probe_protocol && (
+            <span className="px-1.5 py-0.2 rounded bg-cyan-950/80 border border-cyan-800/40 text-cyan-300 text-[10px]">
+              {telemetry[0].custom_metrics.probe_protocol}
+            </span>
+          )}
+          {telemetry[0]?.device_status && (
+            <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+              telemetry[0].device_status === 'UP' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+            }`}>
+              {telemetry[0].device_status}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-4">
+          <div>
+            <span className="text-slate-500">INC: </span>
+            <span className="text-slate-200 font-semibold">{canonicalReport?.incident_id || 'INC-ACTIVE'}</span>
+          </div>
+          <div>
+            <span className="text-slate-500">Observed: </span>
+            <span className="text-slate-300">
+              {telemetry[0]?.timestamp ? new Date(telemetry[0].timestamp).toLocaleTimeString() : 'Current'}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Chart Canvas Area */}
       <div className="w-full">
         {/* ========================================================== */}

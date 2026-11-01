@@ -118,10 +118,23 @@ export default function App() {
   const handleSelectScenario = async (scenarioId) => {
     setSelectedScenarioId(scenarioId);
     try {
+      setIsDiagnosing(true);
+      setErrorMsg(null);
       const data = await fetchScenarioTelemetry(scenarioId);
       setTelemetry(data.telemetry || []);
+      const result = await runDiagnosis({ scenarioId });
+      setDiagnosticResult(result);
+      if (result.telemetry) {
+        setTelemetry(result.telemetry);
+      }
+      const evts = result.timeline_events || [];
+      setTimelineEvents(evts);
+      setCurrentStepIndex(evts.length > 0 ? evts.length - 1 : 0);
+      fetchInvestigations().then(setPastInvestigations).catch(() => {});
     } catch (err) {
       console.error(`Failed to load scenario telemetry:`, err);
+    } finally {
+      setIsDiagnosing(false);
     }
   };
 
@@ -187,6 +200,33 @@ export default function App() {
   const handleSelectLiveInvestigation = async (incId) => {
     await handleSelectPastInvestigation(incId);
     setActiveView('ops');
+  };
+
+  const handleLiveProbeComplete = (probeData) => {
+    const diag = probeData?.diagnosis || probeData?.investigation_result;
+    if (diag) {
+      setDiagnosticResult(diag);
+      if (diag.telemetry) {
+        setTelemetry(diag.telemetry);
+      }
+      const evts = diag.timeline_events || [];
+      setTimelineEvents(evts);
+      setCurrentStepIndex(evts.length > 0 ? evts.length - 1 : 0);
+      fetchInvestigations().then(setPastInvestigations).catch(() => {});
+      setHistory((prev) => [
+        {
+          incident_id: diag.incident_id,
+          scenario_id: 'live_probe',
+          status: diag.status,
+          suspected_root_cause: diag.suspected_root_cause,
+          confidence: diag.confidence,
+          execution_time_ms: diag.execution_time_ms,
+          timestamp: new Date().toLocaleTimeString(),
+          full_result: diag,
+        },
+        ...prev.slice(0, 7),
+      ]);
+    }
   };
 
   // Custom Raw CSV / JSON Submission
@@ -441,6 +481,7 @@ export default function App() {
         {activeView === 'integrations' && (
           <NetworkIntegrationsView
             onSelectLiveInvestigation={handleSelectLiveInvestigation}
+            onLiveDiagnosisComplete={handleLiveProbeComplete}
             currentTelemetryOrigin={currentTelemetryOrigin}
           />
         )}

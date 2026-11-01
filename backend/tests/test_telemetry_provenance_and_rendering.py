@@ -227,8 +227,9 @@ class TestTelemetryProvenanceAndAntiFabrication:
 
         assert result["telemetry_origin"] == "LIVE_DEVICE"
         assert result["canonical_report"]["telemetry_origin"] == "LIVE_DEVICE"
-        assert result["status"] == "HEALTHY"
-        assert "Normal Network Operation" in result["suspected_root_cause"]
+        assert result["status"] in ("INCONCLUSIVE", "INSUFFICIENT_EVIDENCE")
+        assert "Missing Telemetry Dimensions" in result["suspected_root_cause"]
+        assert result["confidence"] <= 0.35
 
         # Check serialized telemetry records
         serialized_rec = result["telemetry"][0]
@@ -357,3 +358,27 @@ class TestTelemetryProvenanceAndAntiFabrication:
         assump_text = " ".join(assumptions)
         assert "benchmark digital twin simulation environment" not in assump_text
         assert "live" in assump_text.lower()
+
+    def test_missing_telemetry_cannot_conclude_normal_network_operation_or_high_confidence(self):
+        """
+        Verify that missing telemetry dimensions (e.g. ICMP ping with fast 12ms RTT and 0% loss,
+        but CPU, memory, queues, and CRC counters missing) CANNOT result in:
+        1. 'Normal Network Operation' conclusion.
+        2. 'HEALTHY' status.
+        3. Unjustified high confidence (> 35%).
+        """
+        orch = MultiAgentOrchestrator()
+        fast_probe = TelemetryRecord(
+            device_id="10.10.214.160",
+            timestamp="2026-11-01T05:00:00Z",
+            latency_ms=12.0,  # Fast SLA-compliant latency
+            packet_loss_pct=0.0,
+            telemetry_origin="LIVE_DEVICE",
+            # All other dimensions: None
+        )
+
+        res = orch.run_diagnosis([fast_probe], incident_id="INC-FAST-PING-GAPS")
+        assert res["status"] in ("INCONCLUSIVE", "INSUFFICIENT_EVIDENCE")
+        assert "Normal Network Operation" not in res["suspected_root_cause"]
+        assert "Missing Telemetry Dimensions" in res["suspected_root_cause"]
+        assert res["confidence"] <= 0.35

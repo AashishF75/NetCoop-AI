@@ -18,7 +18,7 @@ import {
   getBackendBaseUrl,
 } from '../api/client';
 
-export default function NetworkIntegrationsView({ onSelectLiveInvestigation, currentTelemetryOrigin }) {
+export default function NetworkIntegrationsView({ onSelectLiveInvestigation, onLiveDiagnosisComplete, currentTelemetryOrigin }) {
   // Navigation sub-view: 'ip_check' | 'collectors' | 'direct_probes'
   const [subView, setSubView] = useState('ip_check');
 
@@ -288,6 +288,9 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
     try {
       const res = await diagnoseLiveNetwork();
       setLiveDiagnosisResult(res);
+      if (onLiveDiagnosisComplete && res?.investigation_result) {
+        onLiveDiagnosisComplete({ diagnosis: res.investigation_result });
+      }
       await loadCollectorInventory();
       await loadSources();
     } catch (err) {
@@ -351,6 +354,9 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
       }
       const res = await probeDeviceIp(payload);
       setProbeResult(res);
+      if (onLiveDiagnosisComplete) {
+        onLiveDiagnosisComplete(res);
+      }
       await loadCollectorInventory();
     } catch (err) {
       setProbeError(err.message || 'IP device probe failed.');

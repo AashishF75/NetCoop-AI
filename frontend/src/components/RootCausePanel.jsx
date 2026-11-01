@@ -122,6 +122,29 @@ export default function RootCausePanel({ report }) {
             {suspected_root_cause}
           </h3>
 
+          {/* Incident Metadata & Provenance Bar */}
+          <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-mono text-slate-400">
+            {report.incident_id && (
+              <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
+                INC: <strong className="text-white">{report.incident_id}</strong>
+              </span>
+            )}
+            {report.telemetry_origin && (
+              <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
+                report.telemetry_origin === 'LIVE_DEVICE' || report.telemetry_origin === 'LIVE_HOST'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                  : 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+              }`}>
+                {report.telemetry_origin}
+              </span>
+            )}
+            {report.timestamp && (
+              <span className="text-slate-400">
+                🕒 {new Date(report.timestamp).toLocaleString()}
+              </span>
+            )}
+          </div>
+
           {/* Implicated Devices */}
           {affected_devices.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono pt-0.5">

@@ -964,27 +964,9 @@ class FaultCorrelationAgent(BaseAgent):
         has_anomalous_performance = ((max_lat or 0.0) >= 50.0 or (max_loss or 0.0) > 0.0)
         has_concrete_root_cause = winner.probability >= 0.70
 
-        # 1. Check if network is completely healthy (all measured dimensions within SLA bounds)
-        if winner.probability <= 0.20 and not has_anomalous_performance:
-            calibrated_conf, expl = self._calibrate_confidence(
-                status=DiagnosticStatus.HEALTHY,
-                base_probability=0.98,
-                supporting_layers_count=2,
-                missing_critical_count=0,
-                has_stale=self.has_stale_telemetry,
-                telemetry_origin=self.detected_origin,
-                conflict_detected=conflict_detected,
-                conflict_resolved=conflict_resolved,
-                failed_agents_count=len(failed_agents or []),
-            )
-            self.confidence_explanation = expl
-            return (
-                DiagnosticStatus.HEALTHY,
-                "Normal Network Operation (All Telemetry Within SLA Baselines)",
-                calibrated_conf,
-            )
-
-        # 2. Check if severe telemetry gaps exist for an unconfirmed anomaly
+        # 1. Guard: Check if severe telemetry gaps exist (Missing critical telemetry dimensions)
+        # When critical dimensions (CPU, queue drops, CRC counters) are absent,
+        # we CANNOT assert 'Normal Network Operation' or high confidence!
         if has_severe_gaps and not has_concrete_root_cause:
             self.next_diagnostic_checks.extend([
                 "Deploy local collector agent to stream hardware CPU and buffer discard metrics.",
@@ -993,9 +975,9 @@ class FaultCorrelationAgent(BaseAgent):
             ])
             calibrated_conf, expl = self._calibrate_confidence(
                 status=DiagnosticStatus.INCONCLUSIVE,
-                base_probability=0.40,
-                supporting_layers_count=0,
-                missing_critical_count=self.max_missing_critical,
+                base_probability=0.35,
+                supporting_layers_count=1 if not has_anomalous_performance else 0,
+                missing_critical_count=max(self.max_missing_critical, 3),
                 has_stale=self.has_stale_telemetry,
                 telemetry_origin=self.detected_origin,
                 conflict_detected=conflict_detected,
@@ -1006,6 +988,26 @@ class FaultCorrelationAgent(BaseAgent):
             return (
                 DiagnosticStatus.INCONCLUSIVE,
                 "Inconclusive Diagnosis due to Missing Telemetry Dimensions (Queue drops, CPU, and Interface counters absent)",
+                min(calibrated_conf, 0.35),
+            )
+
+        # 2. Check if network is completely healthy (all measured dimensions within SLA bounds AND all critical dimensions present)
+        if winner.probability <= 0.20 and not has_anomalous_performance and not has_severe_gaps:
+            calibrated_conf, expl = self._calibrate_confidence(
+                status=DiagnosticStatus.HEALTHY,
+                base_probability=0.98,
+                supporting_layers_count=2,
+                missing_critical_count=self.max_missing_critical,
+                has_stale=self.has_stale_telemetry,
+                telemetry_origin=self.detected_origin,
+                conflict_detected=conflict_detected,
+                conflict_resolved=conflict_resolved,
+                failed_agents_count=len(failed_agents or []),
+            )
+            self.confidence_explanation = expl
+            return (
+                DiagnosticStatus.HEALTHY,
+                "Normal Network Operation (All Telemetry Within SLA Baselines)",
                 calibrated_conf,
             )
 
