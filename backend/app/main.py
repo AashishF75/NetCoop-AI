@@ -6,9 +6,11 @@ scenario benchmarks, and interactive visualization.
 """
 
 from typing import List, Dict, Any, Optional
+import os
 import time
 import uuid
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response, Query
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -773,11 +775,48 @@ def ingest_syslog_messages(req: SyslogIngestRequest):
     return {"success": True, "ingested_messages": count}
 
 
+@app.get("/api/integrations/validate-target")
+def validate_target_endpoint(target: str = Query(..., description="Target host to validate and classify")):
+    """
+    Validates, classifies, and recommends routing for a network probe target.
+    Identifies PRIVATE_IPV4, PUBLIC_IPV4, HOSTNAME, or IPV6,
+    checks SSRF and scanning rules, and informs the frontend whether a local collector is required.
+    """
+    from app.integrations.models import classify_target
+    classification = classify_target(target)
+    hub = get_collector_hub()
+    online_cols = hub.list_online_collectors()
+    return {
+        "raw_target": classification.raw_target,
+        "clean_target": classification.clean_target,
+        "target_type": classification.target_type.value,
+        "is_private": classification.is_private,
+        "is_loopback": classification.is_loopback,
+        "is_safe": classification.is_safe,
+        "validation_error": classification.validation_error,
+        "recommended_routing": classification.recommended_routing,
+        "routing_explanation": classification.routing_explanation,
+        "online_collectors_count": len(online_cols),
+        "online_collectors": [
+            {
+                "collector_id": c.collector_id,
+                "name": c.name,
+                "local_ip": c.local_ip,
+                "default_gateway": c.default_gateway,
+                "supported_protocols": getattr(c, "supported_protocols", ["PING", "TCP_PROBE", "HOST_METRICS", "SNMP", "RESTCONF"]),
+            }
+            for c in online_cols
+        ],
+    }
+
+
 class DeviceProbeRequest(BaseModel):
-    ip: str = Field(..., description="Target IPv4 or hostname to probe")
+    ip: str = Field(..., description="Target IPv4, IPv6, or hostname to probe")
     protocol: str = Field(default="PING", description="PING, TCP_PROBE, HOST_METRICS, SNMP, RESTCONF")
     port: Optional[int] = Field(default=80, description="TCP port if TCP_PROBE")
     device_id: Optional[str] = Field(default=None, description="Identifier for target device")
+    collector_id: Optional[str] = Field(default=None, description="Explicit collector ID to route the probe through")
+    execution_mode: Optional[str] = Field(default="AUTO", description="AUTO, LOCAL_COLLECTOR, or CLOUD_DIRECT")
 
 
 @app.post("/api/integrations/probe-ip")
@@ -786,6 +825,7 @@ async def probe_device_ip_and_diagnose(req: DeviceProbeRequest):
     On-demand point-to-point IP device probe & multi-agent fault diagnosis.
     Gathers only supported metrics (ICMP ping RTT, TCP handshake, or host kernel metrics),
     avoids fabricating router internals, and feeds telemetry into the 5-agent diagnosis engine.
+    Enforces cloud vs local routing boundaries: Private LAN targets cannot be reached by cloud backend directly.
     """
     from app.integrations.probe_service import probe_ip_and_diagnose
     try:
@@ -795,10 +835,23 @@ async def probe_device_ip_and_diagnose(req: DeviceProbeRequest):
             port=req.port or 80,
             device_id=req.device_id,
             orchestrator=orchestrator,
+            collector_id=req.collector_id,
+            execution_mode=req.execution_mode,
         )
         return res
     except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
+        err_msg = str(ve)
+        is_private_collector_required = "Cloud backend cannot directly route to private target" in err_msg or "No online collectors" in err_msg
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error_code": "PRIVATE_TARGET_REQUIRES_COLLECTOR" if is_private_collector_required else "INVALID_PROBE_REQUEST",
+                "detail": err_msg,
+                "can_retry": True,
+                "is_private_target": is_private_collector_required,
+            },
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Device probe failed: {str(e)}")
 
@@ -818,7 +871,10 @@ def enroll_collector(req: CollectorEnrollRequest, request: Request):
     Generates a secure enrollment token and copyable pairing commands for a new collector.
     """
     hub = get_collector_hub()
-    base_url = req.backend_url or str(request.base_url).rstrip("/")
+    env_backend = os.environ.get("BACKEND_URL") or os.environ.get("RENDER_EXTERNAL_URL")
+    base_url = req.backend_url or env_backend or str(request.base_url).rstrip("/")
+    if ":5173" in base_url:
+        base_url = base_url.replace(":5173", ":8000")
     return hub.create_enrollment(name=req.name, backend_base_url=base_url)
 
 

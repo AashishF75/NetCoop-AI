@@ -20,6 +20,30 @@ function resolveApiBase() {
 
 export const API_BASE = resolveApiBase();
 
+/**
+ * Resolves the actual FastAPI backend base URL for standalone tools like the collector CLI.
+ * Ensures the collector connects to the FastAPI backend (port 8000), never the Vite frontend (port 5173).
+ */
+export function getBackendBaseUrl() {
+  const envUrl = (import.meta.env.VITE_API_URL || '').trim();
+  if (envUrl) {
+    return envUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
+  }
+  // When running on Vercel deployment, default to production Render backend URL
+  if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+    return PROD_RENDER_URL;
+  }
+  // When running on local dev server (Vite on :5173), point to FastAPI backend on port 8000
+  if (typeof window !== 'undefined') {
+    const { hostname, port, protocol } = window.location;
+    if (port === '5173' || hostname === 'localhost' || hostname === '127.0.0.1') {
+      return `${protocol}//${hostname}:8000`;
+    }
+    return window.location.origin;
+  }
+  return 'http://127.0.0.1:8000';
+}
+
 export async function fetchHealth() {
   const res = await fetch(`${API_BASE}/health`);
   if (!res.ok) throw new Error(`Health check failed: ${res.statusText}`);
@@ -253,6 +277,15 @@ export async function diagnoseLiveNetwork(payload = {}) {
   return res.json();
 }
 
+export async function validateTarget(target) {
+  const res = await fetch(`${API_BASE}/integrations/validate-target?target=${encodeURIComponent(target)}`);
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || 'Target validation failed');
+  }
+  return res.json();
+}
+
 export async function probeDeviceIp(payload) {
   const res = await fetch(`${API_BASE}/integrations/probe-ip`, {
     method: 'POST',
@@ -261,7 +294,12 @@ export async function probeDeviceIp(payload) {
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(errorData.detail || 'IP probe failed');
+    const err = new Error(errorData.detail || 'IP probe failed');
+    err.error_code = errorData.error_code;
+    err.detail = errorData.detail;
+    err.is_private_target = errorData.is_private_target;
+    err.can_retry = errorData.can_retry;
+    throw err;
   }
   return res.json();
 }

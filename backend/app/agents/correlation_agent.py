@@ -271,15 +271,25 @@ class FaultCorrelationAgent(BaseAgent):
 
         for rec in telemetry:
             dev = rec.device_id or "Unknown-Device"
+            dev_type = (rec.device_type or "").lower()
             missing_in_rec = []
             if rec.latency_ms is None:
                 missing_in_rec.append("latency_ms")
-            if rec.cpu_utilization_pct is None:
-                missing_in_rec.append("cpu_utilization_pct")
-            if rec.queue_drops_per_sec is None and rec.interface_in_discards is None and rec.interface_out_discards is None:
-                missing_in_rec.append("queue_drops_per_sec")
-            if rec.interface_crc_errors is None:
-                missing_in_rec.append("interface_crc_errors")
+
+            if dev_type in ("ap", "access_point", "wifi") or "ap-" in dev.lower():
+                if rec.wifi_rssi_dbm is None:
+                    missing_in_rec.append("wifi_rssi_dbm")
+            elif dev_type in ("server", "host", "database") or "dns" in dev.lower() or "server" in dev.lower():
+                if rec.dns_response_ms is None and rec.cpu_utilization_pct is None:
+                    missing_in_rec.append("service_metric")
+            else:
+                if rec.cpu_utilization_pct is None:
+                    missing_in_rec.append("cpu_utilization_pct")
+                if rec.queue_drops_per_sec is None and rec.interface_in_discards is None and rec.interface_out_discards is None:
+                    missing_in_rec.append("queue_drops_per_sec")
+                if rec.interface_crc_errors is None:
+                    missing_in_rec.append("interface_crc_errors")
+
             if rec.interface_oper_status is None and rec.device_status is None:
                 missing_in_rec.append("interface_oper_status")
 
@@ -560,20 +570,34 @@ class FaultCorrelationAgent(BaseAgent):
         # Severe telemetry gaps
         has_severe_gaps = any("missing critical telemetry" in lim for lim in self.limitations_identified)
 
-        # Aggregate evidence metrics across records
-        max_crc = max([r.interface_crc_errors or 0 for r in telemetry], default=0)
-        max_drops = max([r.queue_drops_per_sec or 0.0 for r in telemetry], default=0.0)
-        max_discards = max([(r.interface_in_discards or 0) + (r.interface_out_discards or 0) for r in telemetry], default=0)
-        max_util = max([r.utilization_pct or 0.0 for r in telemetry], default=0.0)
-        max_cpu = max([r.cpu_utilization_pct or 0.0 for r in telemetry], default=0.0)
-        max_mem = max([r.memory_utilization_pct or 0.0 for r in telemetry], default=0.0)
-        min_rssi = min([r.wifi_rssi_dbm for r in telemetry if r.wifi_rssi_dbm is not None], default=-50.0)
-        max_retries = max([r.wifi_retry_pct or 0.0 for r in telemetry], default=0.0)
+        # Aggregate evidence metrics across records (preserve None when metric was not exposed)
+        max_crc = max([r.interface_crc_errors for r in telemetry if r.interface_crc_errors is not None], default=None)
+        max_drops = max([r.queue_drops_per_sec for r in telemetry if r.queue_drops_per_sec is not None], default=None)
+        discards_list = [
+            (r.interface_in_discards or 0) + (r.interface_out_discards or 0)
+            for r in telemetry
+            if (r.interface_in_discards is not None or r.interface_out_discards is not None)
+        ]
+        max_discards = max(discards_list, default=None)
+        max_util = max([r.utilization_pct for r in telemetry if r.utilization_pct is not None], default=None)
+        max_cpu = max([r.cpu_utilization_pct for r in telemetry if r.cpu_utilization_pct is not None], default=None)
+        max_mem = max([r.memory_utilization_pct for r in telemetry if r.memory_utilization_pct is not None], default=None)
+        min_rssi = min([r.wifi_rssi_dbm for r in telemetry if r.wifi_rssi_dbm is not None], default=None)
+        max_retries = max([r.wifi_retry_pct for r in telemetry if r.wifi_retry_pct is not None], default=None)
         max_dns_ms = max([r.dns_response_ms for r in telemetry if r.dns_response_ms is not None], default=None)
         max_dhcp_util = max([r.dhcp_pool_utilization_pct for r in telemetry if r.dhcp_pool_utilization_pct is not None], default=None)
-        max_flaps = max([r.interface_flaps or 0 for r in telemetry], default=0)
-        max_lat = max([r.latency_ms or 0.0 for r in telemetry], default=0.0)
-        max_loss = max([r.packet_loss_pct or 0.0 for r in telemetry], default=0.0)
+        max_flaps = max([r.interface_flaps for r in telemetry if r.interface_flaps is not None], default=None)
+        max_lat = max([r.latency_ms for r in telemetry if r.latency_ms is not None], default=None)
+        max_loss = max([r.packet_loss_pct for r in telemetry if r.packet_loss_pct is not None], default=None)
+
+        has_crc_metrics = max_crc is not None
+        has_drops_metrics = (max_drops is not None or max_discards is not None)
+        has_util_metrics = max_util is not None
+        has_cpu_metrics = max_cpu is not None
+        has_mem_metrics = max_mem is not None
+        has_wifi_metrics = (min_rssi is not None or max_retries is not None)
+        has_dns_dhcp_metrics = (max_dns_ms is not None or max_dhcp_util is not None)
+        has_if_oper = any(r.interface_oper_status is not None for r in telemetry)
 
         # Interface Down status
         has_interface_down = any(
@@ -589,13 +613,17 @@ class FaultCorrelationAgent(BaseAgent):
         # 1. Physical Interface / Transceiver Defect
         p_interface = 0.05
         sup_interface, con_interface = [], []
-        if max_crc >= 20 or max_flaps >= 2:
-            p_interface = 0.94
-            sup_interface.append(f"Physical CRC error rate high: {max_crc} errors/sec")
-            if max_flaps >= 2:
-                sup_interface.append(f"Interface link flapping detected: {max_flaps} state transitions")
+        if has_crc_metrics:
+            if (max_crc or 0) >= 20 or ((max_flaps or 0) >= 2):
+                p_interface = 0.94
+                sup_interface.append(f"Physical CRC error rate high: {max_crc} errors/sec")
+                if (max_flaps or 0) >= 2:
+                    sup_interface.append(f"Interface link flapping detected: {max_flaps} state transitions")
+            else:
+                con_interface.append(f"Zero or negligible interface CRC errors ({max_crc}) and flaps ({max_flaps or 0})")
         else:
-            con_interface.append(f"Zero or negligible interface CRC errors ({max_crc}) and flaps ({max_flaps})")
+            p_interface = 0.05
+            con_interface.append("Interface CRC error counters were not exposed on this probe protocol.")
 
         # 2. Interface / Link Down Outage
         p_if_down = 0.05
@@ -603,50 +631,55 @@ class FaultCorrelationAgent(BaseAgent):
         if has_interface_down:
             p_if_down = 0.98
             sup_if_down.append("Interface or device operational state is strictly DOWN in telemetry record.")
-        else:
+        elif has_if_oper:
             con_if_down.append("All probed interfaces report operational state UP.")
+        else:
+            con_if_down.append("Interface operational state was not exposed on this probe protocol.")
 
         # 3. Buffer Congestion (Queue Exhaustion)
         # MUST have corroborating evidence: queue drops, discards, or link saturation
         p_congestion = 0.05
         sup_congestion, con_congestion = [], []
-        has_corroborating_drops = (max_drops >= 10.0 or max_discards >= 10)
-        has_corroborating_util = (max_util >= 85.0)
+        has_corroborating_drops = (max_drops is not None and max_drops >= 10.0) or (max_discards is not None and max_discards >= 10)
+        has_corroborating_util = (max_util is not None and max_util >= 85.0)
 
-        if (has_corroborating_util and has_corroborating_drops) or max_drops >= 20.0:
+        if (has_corroborating_util and has_corroborating_drops) or (max_drops is not None and max_drops >= 20.0):
             p_congestion = 0.95
             if has_corroborating_util:
                 sup_congestion.append(f"Sustained link bandwidth saturation: {max_util}%")
-            if max_drops >= 10.0:
+            if max_drops is not None and max_drops >= 10.0:
                 sup_congestion.append(f"Active egress queue drops: {max_drops} pkts/s")
-            if max_discards >= 10:
+            if max_discards is not None and max_discards >= 10:
                 sup_congestion.append(f"Active interface packet discards: {max_discards}")
-        elif (has_corroborating_util and max_drops >= 5.0) or (max_lat >= 100.0 and (max_util >= 70.0 and (max_drops > 0 or max_discards > 0))):
+        elif (has_corroborating_util and max_drops is not None and max_drops >= 5.0) or (
+            (max_lat or 0.0) >= 100.0 and (max_util is not None and max_util >= 70.0 and ((max_drops or 0.0) > 0 or (max_discards or 0) > 0))
+        ):
             p_congestion = 0.78
             sup_congestion.append(f"Elevated link utilization ({max_util}%) and queue drops ({max_drops} pkts/s)")
         else:
-            if max_lat >= 50.0:
+            if not has_drops_metrics and not has_util_metrics:
+                con_congestion.append("Buffer queue discards and link bandwidth utilization were not exposed on this probe protocol.")
+            elif (max_lat or 0.0) >= 50.0:
                 con_congestion.append(
-                    f"Contradicting evidence: Latency is {max_lat} ms, but buffer queue drops are {max_drops} pkts/s, "
-                    f"discards are {max_discards}, and link utilization is {max_util}%. High ping latency alone does NOT confirm congestion."
+                    f"Contradicting evidence: Latency is {max_lat} ms, but buffer queue drops are {max_drops or 0.0} pkts/s, "
+                    f"discards are {max_discards or 0}, and link utilization is {max_util or 0.0}%. High ping latency alone does NOT confirm congestion."
                 )
             else:
-                con_congestion.append(f"Link bandwidth utilization is low ({max_util}%), queue drops: {max_drops} pkts/s")
+                con_congestion.append(f"Link bandwidth utilization is low ({max_util or 0.0}%), queue drops: {max_drops or 0.0} pkts/s")
 
         # 4. Wireless RF Signal Degradation (Weak Wi-Fi)
         p_wifi = 0.05
         sup_wifi, con_wifi = [], []
-        has_wifi_metrics = any(r.wifi_rssi_dbm is not None for r in telemetry)
         if has_wifi_metrics:
-            if min_rssi <= -80.0 or max_retries >= 25.0:
+            if (min_rssi is not None and min_rssi <= -80.0) or ((max_retries or 0.0) >= 25.0):
                 p_wifi = 0.96
                 sup_wifi.append(f"Severe RF path loss: RSSI {min_rssi} dBm (crit < -80 dBm)")
-                sup_wifi.append(f"High 802.11 MAC frame retransmissions: {max_retries}%")
-            elif min_rssi <= -72.0:
+                sup_wifi.append(f"High 802.11 MAC frame retransmissions: {max_retries or 0.0}%")
+            elif min_rssi is not None and min_rssi <= -72.0:
                 p_wifi = 0.65
                 sup_wifi.append(f"Marginal RSSI: {min_rssi} dBm")
             else:
-                con_wifi.append(f"Wireless RSSI nominal ({min_rssi} dBm), retries: {max_retries}%")
+                con_wifi.append(f"Wireless RSSI nominal ({min_rssi} dBm), retries: {max_retries or 0.0}%")
         else:
             p_wifi = 0.0
             con_wifi.append("No wireless RF telemetry available on probed targets.")
@@ -654,12 +687,11 @@ class FaultCorrelationAgent(BaseAgent):
         # 5. Core Infrastructure CPU Exhaustion / Storm
         p_cpu = 0.05
         sup_cpu, con_cpu = [], []
-        has_cpu_metrics = any(r.cpu_utilization_pct is not None for r in telemetry)
         if has_cpu_metrics:
-            if max_cpu >= 90.0:
+            if (max_cpu or 0.0) >= 90.0:
                 p_cpu = 0.93
                 sup_cpu.append(f"Device CPU saturated: {max_cpu}%")
-            elif max_cpu >= 80.0:
+            elif (max_cpu or 0.0) >= 80.0:
                 p_cpu = 0.72
                 sup_cpu.append(f"Elevated CPU utilization: {max_cpu}%")
             else:
@@ -671,7 +703,7 @@ class FaultCorrelationAgent(BaseAgent):
         # 6. Core Services Failure (DNS Timeout / DHCP Exhaustion)
         p_dns = 0.0
         sup_dns, con_dns = [], []
-        if max_dns_ms is not None or max_dhcp_util is not None:
+        if has_dns_dhcp_metrics:
             if (max_dns_ms is not None and max_dns_ms >= 1500.0) or (max_dhcp_util is not None and max_dhcp_util >= 95.0):
                 p_dns = 0.97
                 if max_dns_ms is not None and max_dns_ms >= 1500.0:
@@ -689,8 +721,8 @@ class FaultCorrelationAgent(BaseAgent):
         conflict_detected = False
         conflict_resolved = False
 
-        # Conflict 1: High Latency + Saturated CPU vs Link Congestion
-        if p_cpu > 0.85 and max_util < 50.0 and max_drops == 0.0:
+        # Conflict 1: High Latency + Saturated CPU vs Link Congestion (requires measured util and drops)
+        if p_cpu > 0.85 and max_util is not None and max_util < 50.0 and max_drops is not None and max_drops == 0.0:
             conflict_detected = True
             conflict_resolved = True
             conflict_msg = self.create_message(
@@ -720,8 +752,8 @@ class FaultCorrelationAgent(BaseAgent):
                 "resolution_reasoning": f"Control Plane Processor Saturation on Core-Router-01 ({max_cpu}% CPU) starves packet processing interrupts, causing transit latency without egress buffer drops or link congestion.",
             })
 
-        # Conflict 2: High Ping Latency vs Zero Queue Drops (Contradicts Congestion)
-        elif max_lat >= 80.0 and max_drops == 0.0 and max_discards == 0 and max_util < 50.0 and p_cpu < 0.70:
+        # Conflict 2: High Ping Latency vs Zero Queue Drops (Contradicts Congestion - ONLY if drops & util are measured!)
+        elif (max_lat or 0.0) >= 80.0 and max_drops is not None and max_drops == 0.0 and (max_discards or 0) == 0 and max_util is not None and max_util < 50.0 and p_cpu < 0.70:
             conflict_detected = True
             conflict_resolved = True
             conflict_msg = self.create_message(
@@ -751,8 +783,8 @@ class FaultCorrelationAgent(BaseAgent):
                 "resolution_reasoning": "Absence of corroborating buffer queue drops or discards refutes local link congestion.",
             })
 
-        # Conflict 3: High Packet Loss vs Zero CRC Errors (Contradicts Physical Cable Defect)
-        elif max_loss >= 5.0 and max_crc == 0 and max_drops == 0.0 and not has_interface_down:
+        # Conflict 3: High Packet Loss vs Zero CRC Errors (Contradicts Physical Cable Defect - ONLY if CRC is measured!)
+        elif (max_loss or 0.0) >= 5.0 and max_crc is not None and max_crc == 0 and max_drops is not None and max_drops == 0.0 and not has_interface_down:
             conflict_detected = True
             conflict_resolved = True
             conflict_msg = self.create_message(
@@ -781,6 +813,80 @@ class FaultCorrelationAgent(BaseAgent):
                 "resolution_reasoning": "Zero physical layer CRC errors and link flaps refute physical transceiver or cable damage.",
             })
 
+        # Determine status and reasoning for each hypothesis, strictly respecting unmeasured metrics
+        # 1. Interface Down
+        if has_interface_down:
+            st_if_down = "VALIDATED"
+            re_if_down = "Target interface operational state is strictly DOWN in collected telemetry."
+        elif has_if_oper:
+            st_if_down = "REFUTED"
+            re_if_down = "All probed interfaces report operational state UP."
+        else:
+            st_if_down = "NOT EVALUATED"
+            re_if_down = "Interface operational state was not exposed on this probe protocol."
+
+        # 2. Congestion
+        if p_congestion > 0.70:
+            st_cong = "VALIDATED"
+            re_cong = f"Confirmed: Sustained link utilization ({max_util}%) and egress buffer drops ({max_drops} pkts/s) corroborate buffer overflow."
+        elif not has_drops_metrics and not has_util_metrics:
+            st_cong = "NOT EVALUATED"
+            if (max_lat or 0.0) >= 50.0:
+                re_cong = f"Buffer queue discards and link bandwidth utilization were not exposed on this probe protocol. High RTT latency ({max_lat} ms) cannot be confirmed or refuted without queue telemetry."
+            else:
+                re_cong = "Buffer queue discards and link bandwidth utilization were not exposed on this probe protocol."
+        else:
+            st_cong = "REFUTED"
+            re_cong = f"Refuted: Measured buffer queue drops ({max_drops or 0.0} pkts/s) and low utilization ({max_util or 0.0}%) contradict congestion."
+
+        # 3. Interface Fault (CRC)
+        if has_crc_metrics:
+            st_crc = "VALIDATED" if p_interface > 0.70 else "REFUTED"
+            re_crc = (
+                f"High Layer-1 CRC frame errors ({max_crc}/sec) and interface flaps ({max_flaps or 0}) verify physical transceiver or fiber patch degradation."
+                if p_interface > 0.70
+                else f"Measured physical interface error counters ({max_crc} CRC errors/s) within acceptable limits."
+            )
+        else:
+            st_crc = "NOT EVALUATED"
+            re_crc = "Physical interface CRC error counters and link flaps were not exposed on this probe protocol."
+
+        # 4. CPU Starvation
+        if has_cpu_metrics:
+            st_cpu = "VALIDATED" if p_cpu > 0.70 else "REFUTED"
+            re_cpu = (
+                f"Host Route Processor CPU is saturated at {max_cpu}%, starving control plane interrupt processing."
+                if p_cpu > 0.70
+                else f"Measured CPU utilization ({max_cpu}%) is within operational safety margins."
+            )
+        else:
+            st_cpu = "NOT EVALUATED"
+            re_cpu = "Host processor CPU utilization was not exposed on this probe protocol."
+
+        # 5. Wireless RF
+        if has_wifi_metrics:
+            st_wifi = "VALIDATED" if p_wifi > 0.70 else "REFUTED"
+            re_wifi = (
+                f"Severe wireless path loss observed: RSSI {min_rssi} dBm and {max_retries or 0.0}% MAC retransmissions indicate client attenuation."
+                if p_wifi > 0.70
+                else f"Measured wireless RF signal strength ({min_rssi} dBm) and retry levels are healthy."
+            )
+        else:
+            st_wifi = "NOT EVALUATED"
+            re_wifi = "Wireless RF signal metrics (RSSI / retries) were not collected on this probe."
+
+        # 6. Core DNS/DHCP
+        if has_dns_dhcp_metrics:
+            st_dns = "VALIDATED" if p_dns > 0.70 else "REFUTED"
+            re_dns = (
+                f"Core infrastructure failure: DNS resolver response {max_dns_ms}ms (timeout) and DHCP pool {max_dhcp_util}% capacity."
+                if p_dns > 0.70
+                else "DNS query resolution and DHCP pool availability operating normally."
+            )
+        else:
+            st_dns = "NOT EVALUATED"
+            re_dns = "DNS and DHCP performance counters were not exposed on this probe protocol."
+
         # Create structured CompetingHypothesis records
         hyp_list = [
             CompetingHypothesis(
@@ -790,12 +896,8 @@ class FaultCorrelationAgent(BaseAgent):
                 probability=round(p_if_down, 2),
                 supporting_evidence=sup_if_down,
                 contradicting_evidence=con_if_down,
-                status="VALIDATED" if p_if_down > 0.70 else "REFUTED",
-                reasoning=(
-                    "Target interface operational state is DOWN in collected telemetry."
-                    if p_if_down > 0.70
-                    else "All probed interfaces report operational state UP."
-                ),
+                status=st_if_down,
+                reasoning=re_if_down,
             ),
             CompetingHypothesis(
                 hypothesis_id="HYP-CONGESTION",
@@ -804,16 +906,8 @@ class FaultCorrelationAgent(BaseAgent):
                 probability=round(p_congestion, 2),
                 supporting_evidence=sup_congestion,
                 contradicting_evidence=con_congestion,
-                status="VALIDATED" if p_congestion > 0.70 else ("REFUTED" if con_congestion else "PROPOSED"),
-                reasoning=(
-                    f"Confirmed: Sustained link utilization ({max_util}%) and egress buffer drops ({max_drops} pkts/s) corroborate buffer overflow."
-                    if p_congestion > 0.70
-                    else (
-                        f"Refuted: Zero buffer queue drops ({max_drops} pkts/s) and low utilization ({max_util}%) contradict congestion."
-                        if con_congestion
-                        else "Traffic demand remains well within link buffer capacity baselines."
-                    )
-                ),
+                status=st_cong,
+                reasoning=re_cong,
             ),
             CompetingHypothesis(
                 hypothesis_id="HYP-INTERFACE-FAULT",
@@ -822,12 +916,8 @@ class FaultCorrelationAgent(BaseAgent):
                 probability=round(p_interface, 2),
                 supporting_evidence=sup_interface,
                 contradicting_evidence=con_interface,
-                status="VALIDATED" if p_interface > 0.70 else "REFUTED",
-                reasoning=(
-                    f"High Layer-1 CRC frame errors ({max_crc}/sec) and interface flaps ({max_flaps}) verify physical transceiver or fiber patch degradation."
-                    if p_interface > 0.70
-                    else f"Physical interface error counters ({max_crc} CRC errors/s) within acceptable limits."
-                ),
+                status=st_crc,
+                reasoning=re_crc,
             ),
             CompetingHypothesis(
                 hypothesis_id="HYP-CPU-STARVATION",
@@ -836,12 +926,8 @@ class FaultCorrelationAgent(BaseAgent):
                 probability=round(p_cpu, 2),
                 supporting_evidence=sup_cpu,
                 contradicting_evidence=con_cpu,
-                status="VALIDATED" if p_cpu > 0.70 else "REFUTED",
-                reasoning=(
-                    f"Host Route Processor CPU is saturated at {max_cpu}%, starving control plane interrupt processing."
-                    if p_cpu > 0.70
-                    else f"CPU utilization ({max_cpu}%) is within operational safety margins."
-                ),
+                status=st_cpu,
+                reasoning=re_cpu,
             ),
             CompetingHypothesis(
                 hypothesis_id="HYP-WIFI-RF",
@@ -850,12 +936,8 @@ class FaultCorrelationAgent(BaseAgent):
                 probability=round(p_wifi, 2),
                 supporting_evidence=sup_wifi,
                 contradicting_evidence=con_wifi,
-                status="VALIDATED" if p_wifi > 0.70 else "REFUTED",
-                reasoning=(
-                    f"Severe wireless path loss observed: RSSI {min_rssi} dBm and {max_retries}% MAC retransmissions indicate client attenuation."
-                    if p_wifi > 0.70
-                    else f"Wireless RF signal strength ({min_rssi} dBm) and retry levels are healthy."
-                ),
+                status=st_wifi,
+                reasoning=re_wifi,
             ),
             CompetingHypothesis(
                 hypothesis_id="HYP-DNS-DHCP-OUTAGE",
@@ -864,12 +946,8 @@ class FaultCorrelationAgent(BaseAgent):
                 probability=round(p_dns, 2),
                 supporting_evidence=sup_dns,
                 contradicting_evidence=con_dns,
-                status="VALIDATED" if p_dns > 0.70 else "REFUTED",
-                reasoning=(
-                    f"Core infrastructure failure: DNS resolver response {max_dns_ms}ms (timeout) and DHCP pool {max_dhcp_util}% capacity."
-                    if p_dns > 0.70
-                    else "DNS query resolution and DHCP pool availability operating normally (or unmonitored)."
-                ),
+                status=st_dns,
+                reasoning=re_dns,
             ),
         ]
 
@@ -883,9 +961,31 @@ class FaultCorrelationAgent(BaseAgent):
         # -------------------------------------------------------------
         # OUTCOME DETERMINATION & INSUFFICIENT EVIDENCE GUARDS
         # -------------------------------------------------------------
+        has_anomalous_performance = ((max_lat or 0.0) >= 50.0 or (max_loss or 0.0) > 0.0)
+        has_concrete_root_cause = winner.probability >= 0.70
 
-        # Check if severe telemetry gaps exist
-        if has_severe_gaps and winner.probability < 0.80:
+        # 1. Check if network is completely healthy (all measured dimensions within SLA bounds)
+        if winner.probability <= 0.20 and not has_anomalous_performance:
+            calibrated_conf, expl = self._calibrate_confidence(
+                status=DiagnosticStatus.HEALTHY,
+                base_probability=0.98,
+                supporting_layers_count=2,
+                missing_critical_count=0,
+                has_stale=self.has_stale_telemetry,
+                telemetry_origin=self.detected_origin,
+                conflict_detected=conflict_detected,
+                conflict_resolved=conflict_resolved,
+                failed_agents_count=len(failed_agents or []),
+            )
+            self.confidence_explanation = expl
+            return (
+                DiagnosticStatus.HEALTHY,
+                "Normal Network Operation (All Telemetry Within SLA Baselines)",
+                calibrated_conf,
+            )
+
+        # 2. Check if severe telemetry gaps exist for an unconfirmed anomaly
+        if has_severe_gaps and not has_concrete_root_cause:
             self.next_diagnostic_checks.extend([
                 "Deploy local collector agent to stream hardware CPU and buffer discard metrics.",
                 "Verify SNMP/RESTCONF credentials for target router.",
@@ -909,10 +1009,7 @@ class FaultCorrelationAgent(BaseAgent):
                 calibrated_conf,
             )
 
-        # Check for uncorroborated latency / loss (High latency alone does NOT confirm congestion)
-        has_anomalous_performance = (max_lat >= 80.0 or max_loss >= 5.0)
-        has_concrete_root_cause = winner.probability >= 0.70
-
+        # 3. Check for uncorroborated latency / loss (High latency alone does NOT confirm congestion)
         if has_anomalous_performance and not has_concrete_root_cause:
             self.next_diagnostic_checks.extend([
                 "Execute hop-by-hop traceroute to pinpoint transit hop responsible for latency spike.",
@@ -935,26 +1032,6 @@ class FaultCorrelationAgent(BaseAgent):
             return (
                 DiagnosticStatus.INCONCLUSIVE,
                 f"Inconclusive: Elevated Latency ({max_lat} ms) / Packet Loss ({max_loss}%) Without Corroborating Buffer Drops or Node Exhaustion",
-                calibrated_conf,
-            )
-
-        # Check if network is completely healthy
-        if winner.probability <= 0.20 and not has_anomalous_performance:
-            calibrated_conf, expl = self._calibrate_confidence(
-                status=DiagnosticStatus.HEALTHY,
-                base_probability=0.98,
-                supporting_layers_count=2,
-                missing_critical_count=self.max_missing_critical,
-                has_stale=self.has_stale_telemetry,
-                telemetry_origin=self.detected_origin,
-                conflict_detected=conflict_detected,
-                conflict_resolved=conflict_resolved,
-                failed_agents_count=len(failed_agents or []),
-            )
-            self.confidence_explanation = expl
-            return (
-                DiagnosticStatus.HEALTHY,
-                "Normal Network Operation (All Telemetry Within SLA Baselines)",
                 calibrated_conf,
             )
 

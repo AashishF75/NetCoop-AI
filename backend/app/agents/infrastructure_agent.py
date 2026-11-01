@@ -268,22 +268,22 @@ class InfrastructureAgent(BaseAgent):
             )
 
         rec = matching_records[-1]
-        crc = rec.interface_crc_errors or 0
-        flaps = rec.interface_flaps or 0
-        cpu = rec.cpu_utilization_pct or 0.0
-        mem = rec.memory_utilization_pct or 0.0
+        crc = rec.interface_crc_errors
+        flaps = rec.interface_flaps
+        cpu = rec.cpu_utilization_pct
+        mem = rec.memory_utilization_pct
         if_oper = (rec.interface_oper_status or "").upper()
         dev_stat = (rec.device_status or "").upper()
 
-        has_physical_fault = crc > self.CRC_WARN_SEC or flaps > 1
-        has_cpu_exhaustion = cpu > self.CPU_CRIT_PCT
-        has_memory_pressure = mem > self.MEM_CRIT_PCT
+        has_physical_fault = (crc is not None and crc > self.CRC_WARN_SEC) or (flaps is not None and flaps > 1)
+        has_cpu_exhaustion = cpu is not None and cpu > self.CPU_CRIT_PCT
+        has_memory_pressure = mem is not None and mem > self.MEM_CRIT_PCT
         is_if_down = if_oper == "DOWN" or dev_stat == "DOWN"
 
         findings = []
         if has_physical_fault:
             findings.append(
-                f"CONFIRMED PHYSICAL FAULT: {target_device} has {crc} CRC errors/sec and {flaps} flaps. "
+                f"CONFIRMED PHYSICAL FAULT: {target_device} has {crc} CRC errors/sec and {flaps or 0} flaps. "
                 "Points to defective SFP transceiver or damaged patch cable."
             )
         elif is_if_down:
@@ -302,9 +302,22 @@ class InfrastructureAgent(BaseAgent):
                 "Buffers depleted due to system memory saturation."
             )
         else:
-            findings.append(
-                f"Infrastructure health on {target_device} is nominal (CPU: {cpu}%, RAM: {mem}%, CRC: {crc}, Status: {rec.device_status})."
-            )
+            measured_items = []
+            if cpu is not None:
+                measured_items.append(f"CPU: {cpu}%")
+            if mem is not None:
+                measured_items.append(f"RAM: {mem}%")
+            if crc is not None:
+                measured_items.append(f"CRC: {crc}")
+
+            if measured_items:
+                findings.append(
+                    f"Infrastructure health on {target_device} is nominal ({', '.join(measured_items)}, Status: {rec.device_status})."
+                )
+            else:
+                findings.append(
+                    f"Infrastructure health on {target_device}: Hardware CPU, memory, and CRC metrics were not exposed on this probe (Status: {rec.device_status})."
+                )
 
         resp = self.create_message(
             message_type=MessageType.QUERY_RESPONSE,

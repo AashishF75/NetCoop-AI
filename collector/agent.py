@@ -9,7 +9,7 @@ import logging
 from typing import List, Optional
 from datetime import datetime, timezone
 
-from collector.config import CollectorSettings, LocalDeviceConfig, DeviceProtocol
+from collector.config import CollectorSettings, LocalDeviceConfig, DeviceProtocol, save_collector_config
 from collector.client import CollectorBackendClient
 from collector.adapters.reachability_probe import probe_tcp_reachability
 from collector.adapters.snmp_poller import poll_snmp_device
@@ -38,19 +38,20 @@ class NetworkCollectorAgent:
         Pairs with backend if enrollment token is set and no session token exists.
         """
         if self.settings.enrollment_token and not self.settings.session_token:
-            if not self.settings.collector_id:
-                # Extract collector id from token if prefixed or request backend
-                self.settings.collector_id = "col-lan-01"
-
-            logger.info("Initiating secure pairing with backend: %s", self.settings.backend_url)
+            cid_to_send = self.settings.collector_id or "col-auto"
+            logger.info("Initiating secure pairing with backend %s for collector candidate '%s'", self.settings.backend_url, cid_to_send)
             reg_data = await self.client.register(
-                collector_id=self.settings.collector_id or "col-auto",
+                collector_id=cid_to_send,
                 enrollment_token=self.settings.enrollment_token,
             )
             self.settings.session_token = reg_data["session_token"]
             if reg_data.get("collector_id"):
                 self.settings.collector_id = reg_data["collector_id"]
-            logger.info("Pairing successful! Session token acquired.")
+            try:
+                save_collector_config(self.settings)
+            except Exception as e:
+                logger.warning("Could not persist collector configuration: %s", e)
+            logger.info("Pairing successful! Acquired session token for collector '%s'.", self.settings.collector_id)
 
     async def _heartbeat_loop(self) -> None:
         """

@@ -52,8 +52,15 @@ async def main():
     if args.backend:
         settings.backend_url = args.backend
     if args.token:
-        settings.enrollment_token = args.token
-    if args.collector_id:
+        # If an enrollment token is passed on CLI, detect whether this is a fresh pairing
+        if settings.enrollment_token != args.token:
+            settings.enrollment_token = args.token
+            settings.session_token = None  # Invalidate old session token so new pairing executes
+            settings.collector_id = args.collector_id if args.collector_id else None
+        else:
+            if args.collector_id:
+                settings.collector_id = args.collector_id
+    elif args.collector_id:
         settings.collector_id = args.collector_id
     if args.name:
         settings.collector_name = args.name

@@ -42,17 +42,22 @@ class PerformanceAgent(BaseAgent):
             origin = getattr(record, "telemetry_origin", "SIMULATED_SCENARIO")
 
             # Check corroboration flags on this record
-            drops_val = record.queue_drops_per_sec or 0.0
-            in_discards = record.interface_in_discards or 0
-            out_discards = record.interface_out_discards or 0
-            total_discards = in_discards + out_discards
+            drops_raw = record.queue_drops_per_sec
+            drops_val = drops_raw if drops_raw is not None else None
+            in_discards = record.interface_in_discards
+            out_discards = record.interface_out_discards
+            total_discards = (
+                (in_discards or 0) + (out_discards or 0)
+                if (in_discards is not None or out_discards is not None)
+                else None
+            )
             util_val = record.utilization_pct
 
-            has_queue_drops = drops_val > self.QUEUE_DROP_CRIT
-            has_discards = total_discards >= self.DISCARD_WARN_COUNT
+            has_queue_drops = drops_val is not None and drops_val > self.QUEUE_DROP_CRIT
+            has_discards = total_discards is not None and total_discards >= self.DISCARD_WARN_COUNT
             is_util_high = util_val is not None and util_val >= self.UTIL_WARN_PCT
             has_corroborating_congestion_evidence = (
-                has_queue_drops or has_discards or (is_util_high and (drops_val > 5.0 or total_discards > 0))
+                has_queue_drops or has_discards or (is_util_high and ((drops_val or 0.0) > 5.0 or (total_discards or 0) > 0))
             )
 
             # ---------------------------------------------------------
@@ -68,11 +73,18 @@ class PerformanceAgent(BaseAgent):
                         )
                         c_type = "corroborated_congestion_latency"
                     else:
-                        finding_note = (
-                            f"Critical latency spike on {dev}: {lat} ms (threshold: {self.LATENCY_CRIT_MS} ms). "
-                            f"Egress queue drops ({drops_val} pkts/s) and link utilization ({util_val or 0}%) "
-                            "do NOT corroborate local buffer congestion. High ping latency alone does NOT confirm congestion."
-                        )
+                        if drops_val is None and util_val is None:
+                            finding_note = (
+                                f"Critical latency spike on {dev}: {lat} ms (threshold: {self.LATENCY_CRIT_MS} ms). "
+                                "Queue drops and link bandwidth utilization were not exposed by this probe protocol. "
+                                "High ping latency alone does NOT confirm congestion."
+                            )
+                        else:
+                            finding_note = (
+                                f"Critical latency spike on {dev}: {lat} ms (threshold: {self.LATENCY_CRIT_MS} ms). "
+                                f"Egress queue drops ({drops_val if drops_val is not None else 'N/A'} pkts/s) and link utilization ({util_val if util_val is not None else 'N/A'}%) "
+                                "do NOT corroborate local buffer congestion. High ping latency alone does NOT confirm congestion."
+                            )
                         c_type = "unexplained_transit_latency"
 
                     msg = self.create_message(
@@ -235,41 +247,54 @@ class PerformanceAgent(BaseAgent):
             )
 
         rec = matching_records[-1]
-        drops = rec.queue_drops_per_sec or 0.0
-        in_disc = rec.interface_in_discards or 0
-        out_disc = rec.interface_out_discards or 0
-        discards = in_disc + out_disc
-        high_util = (rec.utilization_pct or 0.0) >= self.UTIL_WARN_PCT
-        has_drops = drops > 5.0 or discards > 5
+        drops = rec.queue_drops_per_sec
+        in_disc = rec.interface_in_discards
+        out_disc = rec.interface_out_discards
+        discards = (in_disc or 0) + (out_disc or 0) if (in_disc is not None or out_disc is not None) else None
+        high_util = rec.utilization_pct is not None and rec.utilization_pct >= self.UTIL_WARN_PCT
+        has_drops = (drops is not None and drops > 5.0) or (discards is not None and discards > 5)
         high_lat = (rec.latency_ms or 0.0) >= self.LATENCY_WARN_MS
         high_loss = (rec.packet_loss_pct or 0.0) >= self.LOSS_WARN_PCT
 
         # Strict corroboration check
-        is_buffer_congested = (has_drops and high_util) or (drops > self.QUEUE_DROP_CRIT)
-        is_congestion_refuted = high_lat and not has_drops and not high_util
+        is_buffer_congested = (has_drops and high_util) or (drops is not None and drops > self.QUEUE_DROP_CRIT)
+        is_congestion_refuted = high_lat and not has_drops and not high_util and (drops is not None or rec.utilization_pct is not None)
 
         response_findings = []
         if is_buffer_congested:
             response_findings.append(
                 f"CORROBORATED: Egress buffer exhaustion on {target_device}. "
-                f"Queue drops: {drops} pkts/s, Discards: {discards}, Utilization: {rec.utilization_pct}%."
+                f"Queue drops: {drops} pkts/s, Discards: {discards or 0}, Utilization: {rec.utilization_pct}%."
             )
         elif is_congestion_refuted:
             response_findings.append(
                 f"REFUTED: High latency ({rec.latency_ms} ms) observed on {target_device} "
-                f"WITHOUT corroborating queue drops (drops: {drops}, discards: {discards}, util: {rec.utilization_pct or 0}%). "
+                f"WITHOUT corroborating queue drops (drops: {drops or 0}, discards: {discards or 0}, util: {rec.utilization_pct or 0}%). "
                 "Buffer congestion hypothesis is physically contradicted."
             )
         elif high_loss and not has_drops:
-            response_findings.append(
-                f"NOTE: Packet loss ({rec.packet_loss_pct}%) observed WITHOUT queue drops on {target_device}. "
-                "Likely non-congestion cause (physical link/layer 1 defect, wireless RF, or upstream policy drop)."
-            )
+            if drops is not None:
+                response_findings.append(
+                    f"NOTE: Packet loss ({rec.packet_loss_pct}%) observed WITHOUT queue drops on {target_device}. "
+                    "Likely non-congestion cause (physical link/layer 1 defect, wireless RF, or upstream policy drop)."
+                )
+            else:
+                response_findings.append(
+                    f"NOTE: Packet loss ({rec.packet_loss_pct}%) observed on {target_device}. "
+                    "Queue drops and link bandwidth utilization were not exposed by this probe protocol. "
+                    "Likely non-congestion cause (physical link/layer 1 defect, wireless RF, or upstream policy drop)."
+                )
         else:
-            response_findings.append(
-                f"Performance metrics for {target_device} show normal queue state. "
-                f"Latency: {rec.latency_ms or 0}ms, Loss: {rec.packet_loss_pct or 0}%."
-            )
+            if drops is not None or rec.utilization_pct is not None:
+                response_findings.append(
+                    f"Performance metrics for {target_device} show normal queue state. "
+                    f"Latency: {rec.latency_ms}ms, Loss: {rec.packet_loss_pct}%."
+                )
+            else:
+                response_findings.append(
+                    f"Performance metrics for {target_device}: Latency: {rec.latency_ms}ms, Loss: {rec.packet_loss_pct}%. "
+                    "Queue drops and link bandwidth utilization were not exposed by this probe."
+                )
 
         resp = self.create_message(
             message_type=MessageType.QUERY_RESPONSE,

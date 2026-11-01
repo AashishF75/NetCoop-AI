@@ -31,6 +31,35 @@ def test_collector_enrollment_token_generation():
     assert "pairing_command_windows" in data
     assert "pairing_command_linux" in data
     assert data["name"] == "Test-Site-Collector"
+    assert ":5173" not in data["pairing_command_windows"]
+    assert ":5173" not in data["pairing_command_linux"]
+
+
+def test_collector_pairing_command_backend_url_resolution():
+    """
+    Tests that pairing commands resolve to the correct backend API base URL:
+    1. If a frontend passes port 5173, the backend replaces it with port 8000.
+    2. If cloud Render backend is configured, it is preserved.
+    """
+    # Test 1: Vite dev port 5173 is corrected to port 8000
+    resp_local = client.post(
+        "/api/collectors/enroll",
+        json={"name": "Local-Dev-Collector", "backend_url": "http://localhost:5173"},
+    )
+    assert resp_local.status_code == 200
+    data_local = resp_local.json()
+    assert ":5173" not in data_local["pairing_command_windows"]
+    assert "--backend http://localhost:8000" in data_local["pairing_command_windows"]
+    assert "--backend http://localhost:8000" in data_local["pairing_command_linux"]
+
+    # Test 2: Production Render cloud deployment URL is preserved
+    resp_render = client.post(
+        "/api/collectors/enroll",
+        json={"name": "Cloud-Collector", "backend_url": "https://netcoop-ai-backend.onrender.com"},
+    )
+    assert resp_render.status_code == 200
+    data_render = resp_render.json()
+    assert "--backend https://netcoop-ai-backend.onrender.com" in data_render["pairing_command_windows"]
 
 
 def test_collector_pairing_handshake_and_authentication():
@@ -85,6 +114,106 @@ def test_collector_pairing_handshake_and_authentication():
         json={"collector_id": col_id, "session_token": "nc_sess_invalid", "active_device_count": 0},
     )
     assert bad_hb.status_code == 401
+
+
+def test_collector_registration_with_stale_config_or_generic_id():
+    """
+    Regression Test:
+    When a user executes the collector from a terminal where a previous collector config
+    exists (or where --collector-id was omitted and defaulted to a generic ID), the client
+    sends a stale collector_id along with the fresh enrollment_token.
+    Verifies that:
+    1. The backend matches the unique enrollment token without 403 failure.
+    2. The backend responds with HTTP 200 and the canonical collector_id.
+    3. Session credentials are created and subsequent heartbeats succeed.
+    4. An invalid enrollment token is properly rejected with HTTP 403.
+    """
+    # 1. Create an existing collector record that simulates an older pairing
+    old_enroll = client.post("/api/collectors/enroll", json={"name": "Pre-Existing-Collector"}).json()
+    old_id = old_enroll["collector_id"]
+
+    # 2. Enroll a fresh collector
+    fresh_enroll = client.post("/api/collectors/enroll", json={"name": "New-Edge-Probe"}).json()
+    fresh_id = fresh_enroll["collector_id"]
+    fresh_token = fresh_enroll["enrollment_token"]
+
+    # Both pairing commands must contain the exact collector ID
+    assert f"--collector-id {fresh_id}" in fresh_enroll["pairing_command_windows"]
+    assert f"--collector-id {fresh_id}" in fresh_enroll["pairing_command_linux"]
+
+    # 3. Simulate client sending the OLD/STALE collector_id with the FRESH token
+    stale_id_resp = client.post(
+        "/api/collectors/register",
+        json={
+            "collector_id": old_id,  # Stale ID from prior run
+            "enrollment_token": fresh_token,  # Fresh token
+            "hostname": "field-laptop",
+            "local_ip": "10.0.0.99",
+            "os_type": "Windows 11",
+        },
+    )
+    assert stale_id_resp.status_code == 200
+    stale_id_data = stale_id_resp.json()
+    assert stale_id_data["success"] is True
+    # Canonical collector_id returned must match the fresh enrolled collector
+    assert stale_id_data["collector_id"] == fresh_id
+    assert stale_id_data["session_token"].startswith("nc_sess_")
+
+    # 4. Heartbeat using the canonical ID and session token must succeed
+    hb_resp = client.post(
+        "/api/collectors/heartbeat",
+        json={
+            "collector_id": fresh_id,
+            "session_token": stale_id_data["session_token"],
+            "active_device_count": 1,
+        },
+    )
+    assert hb_resp.status_code == 200
+    assert hb_resp.json()["status"] == "ACK"
+
+    # 5. Invalid token must be rejected with 403 Forbidden
+    invalid_resp = client.post(
+        "/api/collectors/register",
+        json={
+            "collector_id": "col-arbitrary",
+            "enrollment_token": "nc_coll_invalid_random_token_999",
+            "hostname": "field-laptop",
+            "local_ip": "10.0.0.99",
+            "os_type": "Windows 11",
+        },
+    )
+    assert invalid_resp.status_code == 403
+    assert "Invalid enrollment token" in invalid_resp.json()["detail"]
+
+
+def test_collector_token_expiration():
+    """
+    Verifies that an expired enrollment token is rejected with HTTP 403.
+    """
+    hub = get_collector_hub()
+    enroll = client.post("/api/collectors/enroll", json={"name": "Expiring-Collector"}).json()
+    cid = enroll["collector_id"]
+    token = enroll["enrollment_token"]
+
+    # Artificially expire the token in the hub
+    col = hub.get_collector(cid)
+    assert col is not None
+    col.expires_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    hub._save_state()
+
+    # Registration must now fail with 403
+    expired_resp = client.post(
+        "/api/collectors/register",
+        json={
+            "collector_id": cid,
+            "enrollment_token": token,
+            "hostname": "field-laptop",
+            "local_ip": "10.0.0.99",
+            "os_type": "Windows 11",
+        },
+    )
+    assert expired_resp.status_code == 403
+    assert "expired" in expired_resp.json()["detail"].lower()
 
 
 def test_collector_revocation_lifecycle():

@@ -322,10 +322,15 @@ class ConnectivityAgent(BaseAgent):
                 f"CONFIRMED DHCP POOL EXHAUSTION: {target_device} DHCP pool is {rec.dhcp_pool_utilization_pct}% exhausted."
             )
         elif not has_dns_evidence and not has_dhcp_evidence:
-            findings.append(
-                f"Connectivity indicators on {target_device}: DNS and DHCP metrics were not collected on this probe. "
-                "Service layer cannot be confirmed without explicit DNS/DHCP telemetry."
-            )
+            if rec.wifi_rssi_dbm is None:
+                findings.append(
+                    f"Connectivity indicators on {target_device}: Reachability verified. Wireless RF and DNS/DHCP service metrics were not collected on this probe."
+                )
+            else:
+                findings.append(
+                    f"Connectivity indicators on {target_device}: DNS and DHCP metrics were not collected on this probe. "
+                    "Service layer cannot be confirmed without explicit DNS/DHCP telemetry."
+                )
         else:
             findings.append(
                 f"Connectivity indicators on {target_device} are healthy."

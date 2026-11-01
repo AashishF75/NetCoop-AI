@@ -96,10 +96,10 @@ class TelemetryRecord(BaseModel):
     cpu_utilization_pct: Optional[float] = None
     memory_utilization_pct: Optional[float] = None
     temperature_c: Optional[float] = None
-    fan_status: Optional[str] = "OK"
-    power_supply_status: Optional[str] = "OK"
-    interface_crc_errors: Optional[int] = 0
-    interface_flaps: Optional[int] = 0
+    fan_status: Optional[str] = None
+    power_supply_status: Optional[str] = None
+    interface_crc_errors: Optional[int] = None
+    interface_flaps: Optional[int] = None
     interface_id: Optional[str] = None
     interface_oper_status: Optional[str] = None
     interface_admin_status: Optional[str] = None

@@ -486,10 +486,15 @@ export default function App() {
                   activeCommunicatingNode={activeCommunicatingNode}
                   activeAgentId={activeAgentId}
                   onSelectDevice={handleDeviceClick}
+                  telemetryOrigin={currentTelemetryOrigin}
                 />
               </div>
               <div className="lg:col-span-6">
-                <TelemetryCharts telemetry={telemetry} />
+                <TelemetryCharts
+                  telemetry={telemetry}
+                  telemetryOrigin={currentTelemetryOrigin}
+                  canonicalReport={diagnosticResult?.canonical_report}
+                />
               </div>
             </div>
 

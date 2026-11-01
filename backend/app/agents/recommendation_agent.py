@@ -121,7 +121,7 @@ class RecommendationAgent(BaseAgent):
                     rationale="Check if traffic shaping or upstream carrier policer is silently dropping transit packets.",
                     rollback_plan="Read-only diagnostic",
                     expected_outcome="Verifies whether transit latency is caused by external carrier CIR throttling.",
-                    supporting_evidence=["Local buffer congestion refuted by zero queue drops"],
+                    supporting_evidence=["Transit latency uncorroborated by local buffer telemetry"],
                     requires_human_approval=False,
                 ),
             ])

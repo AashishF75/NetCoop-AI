@@ -68,7 +68,12 @@ class CollectorModel(BaseModel):
     collector_version: str = "1.0.0"
     last_heartbeat_at: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    expires_at: Optional[str] = None
     registered_devices: List[str] = Field(default_factory=list)
+    supported_protocols: List[str] = Field(
+        default_factory=lambda: ["PING", "TCP_PROBE", "HOST_METRICS", "SNMP", "RESTCONF"]
+    )
+    capabilities: Dict[str, Any] = Field(default_factory=dict)
 
 
 class EnrollmentTokenResponse(BaseModel):
@@ -88,6 +93,8 @@ class CollectorRegisterRequest(BaseModel):
     default_gateway: Optional[str] = None
     os_type: str
     collector_version: str = "1.0.0"
+    supported_protocols: Optional[List[str]] = None
+    capabilities: Optional[Dict[str, Any]] = None
 
 
 class CollectorHeartbeatRequest(BaseModel):
@@ -179,14 +186,17 @@ class CollectorHub:
             collector_id=collector_id,
             name=name.strip() or f"Collector-{collector_id}",
             enrollment_token=token,
+            expires_at=expires_at,
             status=CollectorStatus.PENDING_PAIRING,
         )
         self._collectors[collector_id] = collector
         self._save_state()
 
         clean_backend = backend_base_url.rstrip("/")
-        cmd_win = f"python -m collector.run --backend {clean_backend} --token {token}"
-        cmd_linux = f"python3 -m collector.run --backend {clean_backend} --token {token}"
+        if ":5173" in clean_backend:
+            clean_backend = clean_backend.replace(":5173", ":8000")
+        cmd_win = f"python -m collector.run --backend {clean_backend} --collector-id {collector_id} --token {token}"
+        cmd_linux = f"python3 -m collector.run --backend {clean_backend} --collector-id {collector_id} --token {token}"
 
         return EnrollmentTokenResponse(
             collector_id=collector_id,
@@ -200,22 +210,47 @@ class CollectorHub:
     def register_collector(self, req: CollectorRegisterRequest) -> Dict[str, Any]:
         """
         Validates enrollment token and establishes session credentials for the collector.
+        Locates collector primarily by the unique cryptographic enrollment token,
+        preventing false rejections if the client sends a stale local collector ID.
         """
-        collector = self._collectors.get(req.collector_id)
+        collector = None
+
+        # 1. Primary lookup: find collector by unique cryptographic enrollment token
+        for c in self._collectors.values():
+            if c.enrollment_token and secrets.compare_digest(c.enrollment_token, req.enrollment_token):
+                collector = c
+                break
+
+        # 2. Disk sync fallback: if not found in memory, reload state from storage (e.g. multi-process or worker reload)
         if not collector:
-            # Fallback: locate collector by unique enrollment token
+            self._load_state()
             for c in self._collectors.values():
-                if c.enrollment_token == req.enrollment_token:
+                if c.enrollment_token and secrets.compare_digest(c.enrollment_token, req.enrollment_token):
                     collector = c
                     break
+
+        # 3. Secondary fallback: check collector_id match if token was rotated or passed
+        if not collector and req.collector_id:
+            candidate = self._collectors.get(req.collector_id)
+            if candidate and candidate.enrollment_token and secrets.compare_digest(candidate.enrollment_token, req.enrollment_token):
+                collector = candidate
+
         if not collector:
-            raise ValueError(f"Unknown collector ID: '{req.collector_id}'")
+            raise PermissionError("Invalid enrollment token.")
 
         if collector.status == CollectorStatus.REVOKED:
             raise PermissionError("This collector has been revoked by NOC administrators.")
 
-        if collector.enrollment_token != req.enrollment_token:
-            raise PermissionError("Invalid enrollment token.")
+        # Check token expiration
+        if collector.expires_at:
+            try:
+                exp_dt = datetime.fromisoformat(collector.expires_at)
+                if exp_dt.tzinfo is None:
+                    exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) > exp_dt:
+                    raise PermissionError("Enrollment token has expired.")
+            except (ValueError, TypeError):
+                pass
 
         # Generate secure session token for subsequent authenticated requests
         session_token = f"nc_sess_{secrets.token_urlsafe(32)}"
@@ -227,6 +262,10 @@ class CollectorHub:
             collector.default_gateway = req.default_gateway
         collector.os_type = req.os_type
         collector.collector_version = req.collector_version
+        if req.supported_protocols:
+            collector.supported_protocols = req.supported_protocols
+        if req.capabilities:
+            collector.capabilities = req.capabilities
         collector.last_heartbeat_at = datetime.now(timezone.utc).isoformat()
 
         self._save_state()
@@ -265,6 +304,118 @@ class CollectorHub:
         """Returns all enrolled collectors that are currently ONLINE, sorted by most recent activity."""
         online = [c for c in self.list_collectors() if c.status == CollectorStatus.ONLINE]
         return sorted(online, key=lambda c: c.last_heartbeat_at or "", reverse=True)
+
+    def find_best_collector_for_target(
+        self,
+        target: str,
+        protocol: str = "PING",
+        requested_collector_id: Optional[str] = None,
+    ) -> Tuple[Optional[CollectorModel], str, Optional[str]]:
+        """
+        Selects the most suitable online collector capable of probing the specified target.
+        Evaluates collector status, protocol support, and local subnet / gateway affinity.
+        Returns: (collector, selection_reason, error_message)
+        """
+        # Refresh collector heartbeat timeouts
+        self.list_collectors()
+
+        proto_norm = (protocol or "PING").strip().upper()
+        proto_aliases = {
+            "ICMP": "PING",
+            "PING_PROBE": "PING",
+            "TCP": "TCP_PROBE",
+            "PORT_CONNECT": "TCP_PROBE",
+            "HOST": "HOST_METRICS",
+            "LOCAL_HOST": "HOST_METRICS",
+            "YANG": "RESTCONF",
+        }
+        canonical_proto = proto_aliases.get(proto_norm, proto_norm)
+
+        # 1. Explicit collector requested by ID
+        if requested_collector_id:
+            c = self._collectors.get(requested_collector_id)
+            if not c:
+                return None, "", f"Requested collector '{requested_collector_id}' is not enrolled in this system."
+            if c.status == CollectorStatus.REVOKED:
+                return None, "", f"Collector '{c.name}' ({c.collector_id}) has been revoked by administrators."
+            if c.status == CollectorStatus.OFFLINE:
+                return (
+                    None,
+                    "",
+                    f"Selected collector '{c.name}' ({c.collector_id}) is OFFLINE. Last heartbeat was at {c.last_heartbeat_at or 'never'}. Please start the collector daemon inside the target network.",
+                )
+            supported = [p.upper() for p in getattr(c, "supported_protocols", ["PING", "TCP_PROBE", "HOST_METRICS", "SNMP", "RESTCONF"])]
+            if canonical_proto not in supported and proto_norm not in supported:
+                return (
+                    None,
+                    "",
+                    f"Collector '{c.name}' does not support protocol '{proto_norm}'. Supported protocols: {', '.join(supported)}.",
+                )
+            return c, f"Explicitly selected collector '{c.name}' ({c.collector_id}).", None
+
+        # 2. Auto-route among online collectors
+        online_cols = self.list_online_collectors()
+        if not online_cols:
+            return None, "", "No online collectors are currently paired and connected to the cloud backend."
+
+        # Filter by protocol capability
+        capable_cols = []
+        for c in online_cols:
+            supported = [p.upper() for p in getattr(c, "supported_protocols", ["PING", "TCP_PROBE", "HOST_METRICS", "SNMP", "RESTCONF"])]
+            if canonical_proto in supported or proto_norm in supported:
+                capable_cols.append(c)
+
+        if not capable_cols:
+            return None, "", f"None of the {len(online_cols)} online collector(s) support probe protocol '{proto_norm}'."
+
+        # Rank by subnet/gateway affinity if target is an IPv4 address
+        ranked = []
+        import ipaddress
+
+        target_ip_obj = None
+        try:
+            target_ip_obj = ipaddress.ip_address(target)
+        except Exception:
+            pass
+
+        for c in capable_cols:
+            score = 0
+            reason_parts = []
+            if target_ip_obj and isinstance(target_ip_obj, ipaddress.IPv4Address):
+                # Check collector local subnet match (/24)
+                if c.local_ip:
+                    try:
+                        col_net = ipaddress.ip_network(f"{c.local_ip}/24", strict=False)
+                        if target_ip_obj in col_net:
+                            score += 100
+                            reason_parts.append(f"local subnet {col_net}")
+                    except Exception:
+                        pass
+                # Check default gateway match
+                if c.default_gateway:
+                    if target == c.default_gateway:
+                        score += 80
+                        reason_parts.append(f"detected default gateway {c.default_gateway}")
+                    else:
+                        try:
+                            gw_net = ipaddress.ip_network(f"{c.default_gateway}/24", strict=False)
+                            if target_ip_obj in gw_net:
+                                score += 40
+                                reason_parts.append(f"gateway subnet {gw_net}")
+                        except Exception:
+                            pass
+
+            ranked.append((score, c.last_heartbeat_at or "", c, reason_parts))
+
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        best_score, _, best_collector, reasons = ranked[0]
+
+        if best_score > 0 and reasons:
+            sel_reason = f"Auto-selected collector '{best_collector.name}' ({best_collector.collector_id}) matching {', '.join(reasons)}."
+        else:
+            sel_reason = f"Auto-selected active online collector '{best_collector.name}' ({best_collector.collector_id})."
+
+        return best_collector, sel_reason, None
 
     def get_active_default_gateway(self) -> str:
         """

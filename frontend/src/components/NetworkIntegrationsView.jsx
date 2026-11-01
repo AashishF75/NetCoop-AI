@@ -15,6 +15,7 @@ import {
   registerCollectorDevice,
   deleteCollectorDevice,
   probeDeviceIp,
+  getBackendBaseUrl,
 } from '../api/client';
 
 export default function NetworkIntegrationsView({ onSelectLiveInvestigation, currentTelemetryOrigin }) {
@@ -26,9 +27,11 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
   const [probeIp, setProbeIp] = useState('10.10.214.1');
   const [probeProtocol, setProbeProtocol] = useState('PING');
   const [probePort, setProbePort] = useState(80);
+  const [probeRoutingCollectorId, setProbeRoutingCollectorId] = useState('AUTO');
   const [probingDevice, setProbingDevice] = useState(false);
   const [probeResult, setProbeResult] = useState(null);
   const [probeError, setProbeError] = useState(null);
+  const [probeErrorObj, setProbeErrorObj] = useState(null);
 
   // Direct Sources State
   const [sources, setSources] = useState([]);
@@ -133,7 +136,7 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
     e.preventDefault();
     setEnrollingCollector(true);
     try {
-      const backendUrl = window.location.origin;
+      const backendUrl = getBackendBaseUrl();
       const res = await enrollCollector(collectorNameInput || 'LAN-Collector-01', backendUrl);
       setEnrollmentData(res);
       setCollectorNameInput('');
@@ -294,24 +297,69 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
     }
   }
 
+  function getTargetPill(targetStr) {
+    const raw = (targetStr || '').trim();
+    if (!raw) return null;
+    if (raw.includes('/') || raw.includes('*') || raw.includes(';') || raw.includes('&') || raw.includes('|')) {
+      return { type: 'INVALID', label: '⚠️ Unsafe / Scanning Target', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40', isPrivate: false };
+    }
+    if (raw.includes(':')) {
+      const isPrivV6 = raw === '::1' || raw.startsWith('fe80') || raw.startsWith('fc') || raw.startsWith('fd');
+      return { type: 'IPV6', label: isPrivV6 ? '🔒 Private IPv6' : '🌐 Global IPv6', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40', isPrivate: isPrivV6 };
+    }
+    const isPrivateIpv4 = (
+      raw.startsWith('10.') ||
+      raw.startsWith('192.168.') ||
+      raw.startsWith('127.') ||
+      raw.startsWith('169.254.') ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(raw)
+    );
+    if (isPrivateIpv4) {
+      return { type: 'PRIVATE_IPV4', label: '🔒 Private LAN IPv4', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40', isPrivate: true };
+    }
+    if (/^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/.test(raw)) {
+      return { type: 'PUBLIC_IPV4', label: '🌐 Public Internet IPv4', color: 'bg-sky-500/20 text-sky-300 border-sky-500/40', isPrivate: false };
+    }
+    const isLocalHost = raw.toLowerCase() === 'localhost' || raw.toLowerCase().endsWith('.local') || raw.toLowerCase().endsWith('.lan') || raw.toLowerCase().endsWith('.internal') || raw.toLowerCase().endsWith('.corp');
+    return {
+      type: 'HOSTNAME',
+      label: isLocalHost ? '🔒 Local Private Hostname' : '🏷️ DNS Hostname',
+      color: isLocalHost ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+      isPrivate: isLocalHost,
+    };
+  }
+
   async function handleRunIpProbe(e) {
     if (e && e.preventDefault) e.preventDefault();
     if (!probeIp.trim()) {
-      setProbeError('Please enter a target IPv4 address or hostname.');
+      setProbeError('Please enter a target IPv4 address, IPv6 address, or hostname.');
+      setProbeErrorObj(null);
       return;
     }
     setProbingDevice(true);
     setProbeError(null);
+    setProbeErrorObj(null);
     try {
-      const res = await probeDeviceIp({
+      const payload = {
         ip: probeIp.trim(),
         protocol: probeProtocol,
         port: parseInt(probePort, 10) || 80,
-      });
+      };
+      if (probeRoutingCollectorId && probeRoutingCollectorId !== 'AUTO') {
+        payload.collector_id = probeRoutingCollectorId;
+        payload.execution_mode = probeRoutingCollectorId === 'cloud_direct' ? 'CLOUD_DIRECT' : 'LOCAL_COLLECTOR';
+      }
+      const res = await probeDeviceIp(payload);
       setProbeResult(res);
       await loadCollectorInventory();
     } catch (err) {
       setProbeError(err.message || 'IP device probe failed.');
+      setProbeErrorObj({
+        error_code: err.error_code,
+        detail: err.detail || err.message,
+        is_private_target: err.is_private_target || (err.message && err.message.includes('Cloud backend cannot directly route')),
+        can_retry: err.can_retry !== false,
+      });
     } finally {
       setProbingDevice(false);
     }
@@ -569,101 +617,155 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
             </div>
 
             <form onSubmit={handleRunIpProbe} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Target IP */}
-                <div className="md:col-span-1 space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">Target IPv4 Address / Host</label>
-                  <input
-                    type="text"
-                    value={probeIp}
-                    onChange={(e) => setProbeIp(e.target.value)}
-                    placeholder="e.g. 10.244.241.91 or 127.0.0.1"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-indigo-500"
-                    required
-                  />
-                  {/* IP Presets */}
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {detectedGateway && (
-                      <button
-                        type="button"
-                        onClick={() => setProbeIp(detectedGateway)}
-                        className="text-[10px] bg-indigo-950/80 hover:bg-indigo-900/90 text-indigo-300 border border-indigo-700/50 px-2 py-0.5 rounded transition font-mono"
+              {(() => {
+                const targetPill = getTargetPill(probeIp);
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Target IP */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-semibold text-slate-300">Target Host / IP</label>
+                        {targetPill && (
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${targetPill.color}`}>
+                            {targetPill.label}
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={probeIp}
+                        onChange={(e) => setProbeIp(e.target.value)}
+                        placeholder="e.g. 10.244.241.91 or 127.0.0.1"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-indigo-500"
+                        required
+                      />
+                      {/* IP Presets */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {detectedGateway && (
+                          <button
+                            type="button"
+                            onClick={() => setProbeIp(detectedGateway)}
+                            className="text-[10px] bg-indigo-950/80 hover:bg-indigo-900/90 text-indigo-300 border border-indigo-700/50 px-2 py-0.5 rounded transition font-mono"
+                          >
+                            Default Gateway: {detectedGateway}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setProbeIp('127.0.0.1')}
+                          className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition font-mono"
+                        >
+                          Localhost: 127.0.0.1
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setProbeIp('8.8.8.8')}
+                          className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition font-mono"
+                        >
+                          Google DNS: 8.8.8.8
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Routing & Collector Selection */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-semibold text-slate-300">Probe Execution Location</label>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {onlineCollectors.length} Online
+                        </span>
+                      </div>
+                      <select
+                        value={probeRoutingCollectorId}
+                        onChange={(e) => setProbeRoutingCollectorId(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                       >
-                        Default Gateway: {detectedGateway}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setProbeIp('127.0.0.1')}
-                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition font-mono"
-                    >
-                      Localhost: 127.0.0.1
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setProbeIp('8.8.8.8')}
-                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition font-mono"
-                    >
-                      Google DNS: 8.8.8.8
-                    </button>
-                  </div>
-                </div>
+                        <option value="AUTO">⚡ Auto-Route: Best Paired Collector</option>
+                        {onlineCollectors.map((c) => (
+                          <option key={c.collector_id} value={c.collector_id}>
+                            📡 {c.name} ({c.local_ip || c.collector_id})
+                          </option>
+                        ))}
+                        {!targetPill?.isPrivate && (
+                          <option value="cloud_direct">☁️ Direct Cloud Network Stack</option>
+                        )}
+                      </select>
+                      <p className="text-[11px] text-slate-400 leading-tight">
+                        {targetPill?.isPrivate ? (
+                          onlineCollectors.length > 0 ? (
+                            <span className="text-emerald-400">
+                              ✓ Private LAN: Routes through paired collector '{onlineCollectors[0]?.name}'.
+                            </span>
+                          ) : (
+                            <span className="text-amber-400 font-semibold">
+                              ⚠️ Private LAN: Requires local paired collector.
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-slate-400">
+                            Public target: Can route via cloud or paired collector.
+                          </span>
+                        )}
+                      </p>
+                    </div>
 
-                {/* Protocol Selection */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">Interrogation Protocol</label>
-                  <select
-                    value={probeProtocol}
-                    onChange={(e) => setProbeProtocol(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
-                  >
-                    <option value="PING">ICMP Echo Ping (Reachability & RTT)</option>
-                    <option value="TCP_PROBE">TCP Port 3-Way Handshake Connect</option>
-                    <option value="HOST_METRICS">Local Host OS Kernel (Genuine CPU/RAM/Interface)</option>
-                    <option value="SNMP" disabled>Physical Router SNMP v2c/v3 (Planned — Credentials Required)</option>
-                    <option value="RESTCONF" disabled>Physical Router RESTCONF/YANG (Planned — Credentials Required)</option>
-                  </select>
-                  <p className="text-[11px] text-slate-500">
-                    {probeProtocol === 'PING' && 'Direct ICMP echo probe from OS network stack. Captures latency and packet loss.'}
-                    {probeProtocol === 'TCP_PROBE' && 'Full 3-way TCP socket handshake. Validates port reachability.'}
-                    {probeProtocol === 'HOST_METRICS' && 'Reads genuine Windows kernel metrics via GetSystemTimes & GlobalMemoryStatusEx.'}
-                    {probeProtocol === 'SNMP' && 'Planned capability: Requires authorized SNMP community string on physical router.'}
-                    {probeProtocol === 'RESTCONF' && 'Planned capability: Requires TLS RESTCONF credentials on physical router.'}
-                  </p>
-                </div>
+                    {/* Protocol Selection */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-300">Interrogation Protocol</label>
+                      <select
+                        value={probeProtocol}
+                        onChange={(e) => setProbeProtocol(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                      >
+                        <option value="PING">ICMP Echo Ping (Reachability & RTT)</option>
+                        <option value="TCP_PROBE">TCP Port 3-Way Handshake Connect</option>
+                        <option value="HOST_METRICS">Local Host OS Kernel (Genuine CPU/RAM/Interface)</option>
+                        <option value="SNMP" disabled>Physical Router SNMP v2c/v3 (Planned — Credentials Required)</option>
+                        <option value="RESTCONF" disabled>Physical Router RESTCONF/YANG (Planned — Credentials Required)</option>
+                      </select>
+                      <p className="text-[11px] text-slate-500">
+                        {probeProtocol === 'PING' && 'Direct ICMP echo probe. Captures latency and packet loss.'}
+                        {probeProtocol === 'TCP_PROBE' && 'Full 3-way TCP socket handshake. Validates port reachability.'}
+                        {probeProtocol === 'HOST_METRICS' && 'Reads genuine Windows kernel metrics via GetSystemTimes & GlobalMemoryStatusEx.'}
+                        {probeProtocol === 'SNMP' && 'Planned capability: Requires authorized SNMP community string on physical router.'}
+                        {probeProtocol === 'RESTCONF' && 'Planned capability: Requires TLS RESTCONF credentials on physical router.'}
+                      </p>
+                    </div>
 
-                {/* Port (if TCP) */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">Target Port (for TCP probe)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="65535"
-                    disabled={probeProtocol !== 'TCP_PROBE'}
-                    value={probePort}
-                    onChange={(e) => setProbePort(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 disabled:opacity-40 rounded-lg px-3.5 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-indigo-500"
-                  />
-                  <div className="flex gap-1.5 pt-1">
-                    <button
-                      type="button"
-                      disabled={probeProtocol !== 'TCP_PROBE'}
-                      onClick={() => setProbePort(80)}
-                      className="text-[10px] bg-slate-800 disabled:opacity-40 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition"
-                    >
-                      Port 80 (HTTP)
-                    </button>
-                    <button
-                      type="button"
-                      disabled={probeProtocol !== 'TCP_PROBE'}
-                      onClick={() => setProbePort(443)}
-                      className="text-[10px] bg-slate-800 disabled:opacity-40 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition"
-                    >
-                      Port 443 (HTTPS)
-                    </button>
+                    {/* Port (if TCP) */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-300">Target Port (for TCP probe)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="65535"
+                        disabled={probeProtocol !== 'TCP_PROBE'}
+                        value={probePort}
+                        onChange={(e) => setProbePort(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 disabled:opacity-40 rounded-lg px-3.5 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-indigo-500"
+                      />
+                      <div className="flex gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          disabled={probeProtocol !== 'TCP_PROBE'}
+                          onClick={() => setProbePort(80)}
+                          className="text-[10px] bg-slate-800 disabled:opacity-40 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition"
+                        >
+                          Port 80 (HTTP)
+                        </button>
+                        <button
+                          type="button"
+                          disabled={probeProtocol !== 'TCP_PROBE'}
+                          onClick={() => setProbePort(443)}
+                          className="text-[10px] bg-slate-800 disabled:opacity-40 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition"
+                        >
+                          Port 443 (HTTPS)
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                );
+              })()}
 
               {/* Protocol Fidelity Notice */}
               <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 text-xs text-slate-300 flex items-start gap-2.5">
@@ -705,10 +807,54 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
               </div>
             </form>
 
+            {/* Actionable Error Notice Card for Private Targets without Collector */}
             {probeError && (
-              <div className="bg-rose-950/40 border border-rose-600/50 text-rose-200 p-3 rounded-lg text-xs font-mono">
-                Error: {probeError}
-              </div>
+              probeErrorObj?.is_private_target || probeError.includes('Cloud backend cannot directly route') || probeError.includes('No online collectors') ? (
+                <div className="bg-amber-950/40 border border-amber-600/60 rounded-xl p-4 text-xs space-y-3 shadow-lg">
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-xl mt-0.5">🚫</span>
+                    <div>
+                      <h4 className="font-bold text-amber-200 text-sm">
+                        Cloud Backend Cannot Directly Route to Private Target ({probeIp})
+                      </h4>
+                      <p className="text-amber-300/80 text-[11px] mt-0.5">
+                        Private LAN addresses (RFC 1918 subnets, loopback, and local hostnames) are strictly isolated from cloud networks (e.g. Render).
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/70 border border-amber-800/40 rounded-lg p-3 space-y-2 text-slate-300">
+                    <span className="font-semibold text-slate-200 block text-xs">Required Remediation:</span>
+                    <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-300">
+                      <li><strong>Pair an Authorized Collector:</strong> Run an on-premise local collector on a workstation connected to the target network.</li>
+                      <li><strong>Verify Subnet Access:</strong> Ensure the collector has an active IP route to <code className="font-mono text-amber-300">{probeIp}</code>.</li>
+                      <li><strong>Wi-Fi Isolation Notice:</strong> Being on the same Wi-Fi SSID does <em>not</em> guarantee reachability because router client isolation or host firewalls (Windows Defender / iptables) may block LAN probes.</li>
+                    </ul>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setSubView('collectors')}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-bold transition flex items-center gap-1.5"
+                    >
+                      <span>🔑</span> Pair Local Collector
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRunIpProbe}
+                      disabled={probingDevice}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-xs font-bold transition flex items-center gap-1.5"
+                    >
+                      <span>🔄</span> Retry Probe
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-rose-950/40 border border-rose-600/50 text-rose-200 p-3 rounded-lg text-xs font-mono">
+                  Error: {probeError}
+                </div>
+              )
             )}
           </div>
 
@@ -718,7 +864,7 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
               {/* Probe Telemetry Findings Card */}
               <div className="bg-slate-900 border border-indigo-500/40 rounded-xl p-5 shadow-2xl space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex flex-wrap items-center gap-2.5">
                     <span
                       className={`h-3 w-3 rounded-full ${
                         probeResult.probe_result.status === 'UP'
@@ -743,10 +889,25 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
                       {probeResult.probe_result.status}
                     </span>
                     <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 px-2 py-0.5 text-[10px] font-bold rounded">
-                      {probeResult.probe_result.telemetry_origin === 'LIVE_DEVICE'
-                        ? '🟢 LIVE_DEVICE PROBE'
-                        : '🟢 LIVE_HOST TELEMETRY'}
+                      {probeResult.provenance_badge || (probeResult.routed_via_collector?.includes('Cloud') ? '☁️ DIRECT CLOUD PROBE' : '🟢 LOCAL COLLECTOR PROBE')}
                     </span>
+                    {probeResult.probe_result.reachability && (
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                          probeResult.probe_result.reachability === 'REACHABLE'
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : probeResult.probe_result.reachability === 'UNREACHABLE'
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                            : 'bg-slate-800 text-slate-300 border-slate-700'
+                        }`}
+                      >
+                        {probeResult.probe_result.reachability === 'REACHABLE'
+                          ? '✓ REACHABLE'
+                          : probeResult.probe_result.reachability === 'UNREACHABLE'
+                          ? '✕ UNREACHABLE'
+                          : '⚪ UNKNOWN'}
+                      </span>
+                    )}
                     {probeResult.routed_via_collector && (
                       <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-mono rounded">
                         📡 Routed Via: {probeResult.routed_via_collector}
@@ -832,6 +993,29 @@ export default function NetworkIntegrationsView({ onSelectLiveInvestigation, cur
                     </div>
                   )}
                 </div>
+
+                {/* Unreachable Troubleshooting Notice */}
+                {(probeResult.probe_result.status === 'DOWN' || probeResult.probe_result.reachability === 'UNREACHABLE') && (
+                  <div className="bg-rose-950/30 border border-rose-800/40 rounded-lg p-3 text-xs text-rose-200 space-y-2">
+                    <div className="flex items-center gap-2 text-rose-300 font-bold">
+                      <span>⚠️</span>
+                      <span>Target Reachability Diagnostic Analysis</span>
+                    </div>
+                    <p className="text-[11px] text-rose-200/90 leading-relaxed">
+                      The target device at <code className="font-mono text-rose-300">{probeResult.probe_result.ip}</code> did not respond to {probeResult.probe_result.protocol} interrogation routed via {probeResult.routed_via_collector || 'cloud'}.
+                      No router internal metrics (CPU, RAM, bandwidth) were fabricated.
+                    </p>
+                    <div className="bg-slate-950/60 p-2.5 rounded border border-rose-900/40 text-[11px] space-y-1">
+                      <span className="font-semibold text-rose-200 block">Common Root Causes:</span>
+                      <ul className="list-disc list-inside space-y-0.5 text-slate-300">
+                        <li><strong>Host Power:</strong> Device is powered off, rebooting, or physically unplugged from Ethernet/Wi-Fi.</li>
+                        <li><strong>Host Firewall:</strong> Personal firewall (Windows Defender / iptables) is silently dropping incoming ICMP echo requests or TCP probes.</li>
+                        <li><strong>Wi-Fi AP Client Isolation:</strong> Wi-Fi router / Access Point has "Client Isolation" enabled, isolating Wi-Fi devices from each other.</li>
+                        <li><strong>Subnet/VLAN Routing:</strong> Target is on a different VLAN without inter-VLAN routing configured on the default gateway.</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 5-Agent Swarm Consensus Panel */}

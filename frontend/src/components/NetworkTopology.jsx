@@ -123,6 +123,7 @@ export default function NetworkTopology({
   activeCommunicatingNode = null,
   activeAgentId = null,
   onSelectDevice,
+  telemetryOrigin = null,
 }) {
   const nodes = useMemo(() => {
     if (!topology || !topology.nodes) return [];
@@ -194,6 +195,22 @@ export default function NetworkTopology({
         <span className="text-[11px] text-slate-400 font-mono">
           ({nodes.length} Nodes, {edges.length} Links)
         </span>
+        {telemetryOrigin === 'LIVE_DEVICE' || telemetryOrigin === 'LIVE_HOST' ? (
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            LIVE TARGET PROBE (Digital Twin Baseline Overlay)
+          </span>
+        ) : telemetryOrigin === 'CUSTOM_IMPORT' ? (
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+            CUSTOM IMPORT OVERLAY
+          </span>
+        ) : (
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+            SIMULATED DIGITAL TWIN TOPOLOGY
+          </span>
+        )}
         {affectedDevices.length > 0 && (
           <div className="flex items-center gap-1.5 text-xs text-rose-300 font-semibold bg-rose-500/15 px-2 py-0.5 rounded border border-rose-500/30">
             <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>

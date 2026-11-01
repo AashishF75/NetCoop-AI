@@ -366,22 +366,24 @@ class MultiAgentOrchestrator:
                     affected_devices=affected_devices,
                     agent_message=msg,
                 )
-                add_event(
-                    phase="CONFLICT_RESOLUTION",
-                    event_type=InvestigationEventType.HYPOTHESIS_CHALLENGED,
-                    agent_id=self.corr_agent.agent_id,
-                    title="Challenging Egress Link Buffer Congestion",
-                    description="Zero queue drops and 14% link bandwidth utilization contradict traffic congestion hypothesis.",
-                    affected_devices=affected_devices,
-                )
-                add_event(
-                    phase="CONFLICT_RESOLUTION",
-                    event_type=InvestigationEventType.HYPOTHESIS_CONFIRMED,
-                    agent_id=self.corr_agent.agent_id,
-                    title="Confirmed Control Plane Processor Saturation",
-                    description="Host CPU saturation (99.4%) verified as primary root cause starvating packet processing interrupts.",
-                    affected_devices=affected_devices,
-                )
+                resolved_item = self.corr_agent.conflicts_resolved[-1] if getattr(self.corr_agent, "conflicts_resolved", None) else None
+                if resolved_item:
+                    add_event(
+                        phase="CONFLICT_RESOLUTION",
+                        event_type=InvestigationEventType.HYPOTHESIS_CHALLENGED,
+                        agent_id=self.corr_agent.agent_id,
+                        title=f"Challenging {resolved_item.get('initial_hypothesis', 'Initial Hypothesis')}",
+                        description=resolved_item.get("refuting_evidence") or "Contradicting evidence refutes initial hypothesis.",
+                        affected_devices=affected_devices,
+                    )
+                    add_event(
+                        phase="CONFLICT_RESOLUTION",
+                        event_type=InvestigationEventType.HYPOTHESIS_CONFIRMED,
+                        agent_id=self.corr_agent.agent_id,
+                        title=f"Confirmed {resolved_item.get('selected_diagnosis', 'Selected Diagnosis')}",
+                        description=resolved_item.get("resolution_reasoning") or "Consensus reached on prevailing diagnosis.",
+                        affected_devices=affected_devices,
+                    )
             elif msg.message_type == MessageType.DIAGNOSTIC_SUMMARY:
                 add_event(
                     phase="SYNTHESIS",
@@ -394,9 +396,28 @@ class MultiAgentOrchestrator:
                     agent_message=msg,
                 )
 
+        # Determine overall telemetry origin (LIVE_DEVICE, LIVE_HOST, GENERATED_TEST, CUSTOM_IMPORT, or SIMULATED_SCENARIO)
+        origins = {getattr(rec, "telemetry_origin", "SIMULATED_SCENARIO") for rec in sanitized_telemetry}
+        if "LIVE_DEVICE" in origins:
+            detected_origin = "LIVE_DEVICE"
+        elif "LIVE_HOST" in origins or "LIVE" in origins:
+            detected_origin = "LIVE_HOST"
+        elif "GENERATED_TEST" in origins:
+            detected_origin = "GENERATED_TEST"
+        elif "CUSTOM_IMPORT" in origins:
+            detected_origin = "CUSTOM_IMPORT"
+        else:
+            detected_origin = "SIMULATED_SCENARIO"
+
         # Determine fault propagation paths
         fault_propagation_paths: List[List[str]] = []
-        if "Congestion" in root_cause:
+        is_inconclusive = (
+            status in (DiagnosticStatus.INCONCLUSIVE, DiagnosticStatus.INSUFFICIENT_EVIDENCE)
+            or str(status).upper() in ("INCONCLUSIVE", "INSUFFICIENT_EVIDENCE")
+        )
+        if detected_origin in ("LIVE_DEVICE", "LIVE_HOST") and is_inconclusive:
+            fault_propagation_paths = []
+        elif "Congestion" in root_cause:
             fault_propagation_paths = [["Core-Router-01", "Agg-Switch-01", "Edge-Switch-01"]]
         elif "CPU" in root_cause or "Processor" in root_cause:
             fault_propagation_paths = [["Core-Router-01", "Agg-Switch-01"]]
@@ -473,7 +494,13 @@ class MultiAgentOrchestrator:
         elif any(m.message_type == MessageType.CONFLICT_DETECTED for m in dialogue_messages):
             conflict_status = "RESOLVED"
 
-        if conflict_status == "RESOLVED" and resolved_details:
+        if is_inconclusive:
+            final_res_text = (
+                f"Investigation concluded as '{root_cause}' with {round(confidence*100, 1)}% calibrated confidence. "
+                "Collected telemetry is single-dimension or partial. Unmeasured device metrics (CPU, queues, CRC, RF, DNS) "
+                "were not exposed on the probe protocol and were NOT fabricated as healthy zeros. Alternative hypotheses remain uncorroborated."
+            )
+        elif conflict_status == "RESOLVED" and resolved_details:
             final_res_text = (
                 f"The multi-agent swarm established consensus on '{root_cause}' with {round(confidence*100, 1)}% calibrated confidence. "
                 f"Initial hypothesis '{resolved_details.get('initial_hypothesis')}' was challenged and refuted because {resolved_details.get('refuting_evidence')} "
@@ -483,13 +510,18 @@ class MultiAgentOrchestrator:
             final_res_text = (
                 f"The multi-agent swarm established consensus on '{root_cause}' with {round(confidence*100, 1)}% calibrated confidence. "
                 f"Domain agents corroborated signals across performance and infrastructure layers, while correlation cross-examination "
-                f"disproved conflicting hypotheses through empirical counter-evidence."
+                f"evaluated competing hypotheses against observed telemetry."
             )
 
         tradeoffs_list = [
             "Recommended remediation provides immediate operational relief with verified rollback safeguards.",
             "Minimal service disruption expected compared to full hardware failovers or reboot procedures.",
         ]
+
+        if detected_origin in ("LIVE_DEVICE", "LIVE_HOST", "LOCAL_COLLECTOR_PROBE"):
+            env_assumption = "Evaluated using on-demand live telemetry via canonical Pydantic v2 JSON protocol; baseline topology baselines are separated from measured live metrics."
+        else:
+            env_assumption = "Evaluated in benchmark digital twin simulation environment using canonical Pydantic v2 JSON protocol."
 
         explanation = InvestigationExplanation(
             initial_symptoms=initial_symptoms,
@@ -500,7 +532,7 @@ class MultiAgentOrchestrator:
             final_resolution=final_res_text,
             tradeoffs_and_risks=tradeoffs_list,
             assumptions_and_limitations=[
-                "Evaluated in benchmark digital twin simulation environment using canonical Pydantic v2 JSON protocol.",
+                env_assumption,
                 "Cross-agent cross-examination bounded to max 2 interrogation rounds with heuristic evidence scoring.",
             ] + list(combined_limitations),
             conflict_status=conflict_status,
@@ -545,19 +577,6 @@ class MultiAgentOrchestrator:
 
         # Proactive Risk Analysis on current telemetry
         proactive_warnings = proactive_predictor.analyze_trends([], current_telemetry=sanitized_telemetry)
-
-        # Determine overall telemetry origin (LIVE_DEVICE, LIVE_HOST, GENERATED_TEST, CUSTOM_IMPORT, or SIMULATED_SCENARIO)
-        origins = {getattr(rec, "telemetry_origin", "SIMULATED_SCENARIO") for rec in sanitized_telemetry}
-        if "LIVE_DEVICE" in origins:
-            detected_origin = "LIVE_DEVICE"
-        elif "LIVE_HOST" in origins or "LIVE" in origins:
-            detected_origin = "LIVE_HOST"
-        elif "GENERATED_TEST" in origins:
-            detected_origin = "GENERATED_TEST"
-        elif "CUSTOM_IMPORT" in origins:
-            detected_origin = "CUSTOM_IMPORT"
-        else:
-            detected_origin = "SIMULATED_SCENARIO"
 
         # Ensure strict consistency: Inconclusive / Insufficient Evidence must NEVER have high confidence
         if status in (DiagnosticStatus.INCONCLUSIVE, DiagnosticStatus.INSUFFICIENT_EVIDENCE) or str(status).upper() in ("INCONCLUSIVE", "INSUFFICIENT_EVIDENCE"):
@@ -645,6 +664,7 @@ class MultiAgentOrchestrator:
             "affected_devices": affected_devices,
             "fault_propagation_paths": fault_propagation_paths,
             "execution_time_ms": round(elapsed_ms, 2),
+            "telemetry_origin": detected_origin,
             "telemetry": [r.model_dump() for r in sanitized_telemetry],
             "canonical_report": canonical_report.model_dump(),
             "investigation_trace": investigation_trace.model_dump(),

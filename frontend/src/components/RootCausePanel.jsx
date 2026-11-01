@@ -99,6 +99,9 @@ export default function RootCausePanel({ report }) {
     if (s === 'REJECTED' || s === 'REFUTED') {
       return { bg: 'bg-rose-500/20 text-rose-300 border-rose-500/30', icon: XCircle, text: 'DISQUALIFIED' };
     }
+    if (s === 'NOT EVALUATED' || s === 'NOT_EVALUATED' || s === 'UNKNOWN' || s === 'UNRESOLVED') {
+      return { bg: 'bg-slate-700/40 text-slate-400 border-slate-600/40', icon: HelpCircle, text: 'NOT EVALUATED' };
+    }
     return { bg: 'bg-amber-500/20 text-amber-300 border-amber-500/30', icon: AlertTriangle, text: 'COMPETING' };
   };
 
@@ -256,6 +259,8 @@ export default function RootCausePanel({ report }) {
                       ? 'border-emerald-500/40 bg-emerald-950/15'
                       : hyp.status === 'REJECTED' || hyp.status === 'REFUTED'
                       ? 'border-rose-900/30 bg-rose-950/10 opacity-75'
+                      : hyp.status === 'NOT EVALUATED' || hyp.status === 'NOT_EVALUATED' || hyp.status === 'UNKNOWN' || hyp.status === 'UNRESOLVED'
+                      ? 'border-slate-800 bg-slate-900/40 text-slate-400'
                       : 'border-slate-800 bg-slate-950/60'
                   }`}
                 >
